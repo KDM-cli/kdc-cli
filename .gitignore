@@ -1,0 +1,33 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Local KDC runtime/config data
+.kdc/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Attached folders
+/docs/
+/implemented/

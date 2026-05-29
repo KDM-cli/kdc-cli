@@ -1,7 +1,12 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use kdc::{app::startup, config, deploy, doctor, project::analyzer, ui};
+use kdc::{
+    app::startup::{self, StartupOptions},
+    config, deploy, doctor,
+    project::analyzer,
+    ui,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "kdc")]
@@ -12,6 +17,9 @@ struct Cli {
 
     #[arg(short, long, value_name = "PATH", default_value = ".")]
     project: PathBuf,
+
+    #[arg(long)]
+    first_launch: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -91,7 +99,12 @@ fn main() -> anyhow::Result<()> {
             println!("{}", plan.render());
         }
         None => {
-            let state = startup::initialize(cli.project)?;
+            let state = startup::initialize_with_options(
+                cli.project,
+                StartupOptions {
+                    force_first_launch: cli.first_launch,
+                },
+            )?;
             ui::dashboard::run(state)?;
         }
     }

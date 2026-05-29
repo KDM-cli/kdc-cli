@@ -36,15 +36,26 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+      - name: Cache cargo-tarpaulin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-tarpaulin
+          key: ${{ runner.os }}-tarpaulin-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+        run: command -v cargo-tarpaulin || cargo install cargo-tarpaulin
 
       - name: Generate coverage report
-        run: cargo tarpaulin --out lcov --output-dir coverage
+        run: |
+          cargo tarpaulin --out lcov --output-dir coverage \
+            --exclude-files "examples/*" \
+            --exclude-files "tests/*" \
+            --exclude-files "src/main.rs"
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info
+          flags: unittests
           fail_ci_if_error: false

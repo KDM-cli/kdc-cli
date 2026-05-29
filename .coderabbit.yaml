@@ -55,25 +55,21 @@ reviews:
     enabled: true
     drafts: false
   path_filters:
-    - "!dist/**"
-    - "!node_modules/**"
-    - "!package-lock.json"
+    - "!target/**"
+    - "!Cargo.lock"
     - "src/**"
+    - "tests/**"
     - ".github/workflows/**"
   path_instructions:
-    - path: "src/commands/**/*.ts"
+    - path: "src/**/*.rs"
       instructions: |
-        - Verify that all commands follow the modular registration pattern.
-        - Ensure errors are handled gracefully and logged using the project's logger.
-    - path: "src/utils/config.ts"
+        - Verify that all modules follow idiomatic Rust patterns.
+        - Ensure errors are handled with anyhow/miette and not silently ignored.
+        - Check for proper use of ownership, borrowing, and lifetimes.
+    - path: "tests/**/*.rs"
       instructions: |
-        - Ensure configuration keys are type-safe.
-        - Verify that sensitive information is not stored in plain text if possible.
-    - path: "src/__tests__/**/*.ts"
-      instructions: |
-        - Ensure mocks are clean and shared correctly.
-        - Verify that tests cover both happy paths and error conditions.
-
-pre_merge_checks:
-  linked_issue_assessment:
-    mode: "warning"
+        - Ensure tests cover both happy paths and error conditions.
+        - Verify that test assertions are meaningful and specific.
+  pre_merge_checks:
+    linked_issue_assessment:
+      mode: "warning"

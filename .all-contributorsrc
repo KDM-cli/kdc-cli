@@ -1,0 +1,11 @@
+{
+  "projectName": "kdc-cli",
+  "projectOwner": "KDM-cli",
+  "files": [
+    "README.md"
+  ],
+  "commitType": "docs",
+  "commitConvention": "angular",
+  "contributorsPerLine": 7,
+  "contributors": []
+}

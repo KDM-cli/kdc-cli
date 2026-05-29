@@ -1,31 +1,20 @@
 version: 2
 updates:
-  # Maintain dependencies for the main npm project
-  - package-ecosystem: "npm"
+  # Maintain Cargo dependencies
+  - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
-      - "javascript"
+      - "rust"
 
-  # Maintain dependencies for GitHub Actions scripts
-  - package-ecosystem: "npm"
-    directory: "/.github/scripts"
-    schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "javascript"
-      - "github-actions"
-
-  # Maintain dependencies for GitHub Actions workflows
+  # Maintain GitHub Actions workflows
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"

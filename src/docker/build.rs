@@ -24,13 +24,20 @@ pub struct BuildResult {
     pub duration_secs: u64,
 }
 
-/// Build a Docker image from the Dockerfile in `project_root`.
-pub fn execute(request: &BuildRequest, project_root: &Path) -> Result<BuildResult> {
+fn docker_build_with_args(
+    request: &BuildRequest,
+    project_root: &Path,
+    extra_args: &[&str],
+) -> Result<BuildResult> {
     let full_tag = request.full_tag();
     let start = Instant::now();
 
+    let mut args = vec!["build"];
+    args.extend_from_slice(extra_args);
+    args.extend_from_slice(&["-t", &full_tag, "."]);
+
     let output = Command::new("docker")
-        .args(["build", "-t", &full_tag, "."])
+        .args(&args)
         .current_dir(project_root)
         .output()
         .context("Failed to execute docker build")?;
@@ -47,27 +54,14 @@ pub fn execute(request: &BuildRequest, project_root: &Path) -> Result<BuildResul
     })
 }
 
+/// Build a Docker image from the Dockerfile in `project_root`.
+pub fn execute(request: &BuildRequest, project_root: &Path) -> Result<BuildResult> {
+    docker_build_with_args(request, project_root, &[])
+}
+
 /// Rebuild a Docker image (equivalent to build with `--no-cache`).
 pub fn rebuild(request: &BuildRequest, project_root: &Path) -> Result<BuildResult> {
-    let full_tag = request.full_tag();
-    let start = Instant::now();
-
-    let output = Command::new("docker")
-        .args(["build", "--no-cache", "-t", &full_tag, "."])
-        .current_dir(project_root)
-        .output()
-        .context("Failed to execute docker build --no-cache")?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{stdout}{stderr}");
-
-    Ok(BuildResult {
-        success: output.status.success(),
-        image_tag: full_tag,
-        output: combined,
-        duration_secs: start.elapsed().as_secs(),
-    })
+    docker_build_with_args(request, project_root, &["--no-cache"])
 }
 
 #[cfg(test)]

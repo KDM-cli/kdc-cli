@@ -20,9 +20,13 @@ impl Default for ComposeLogRequest {
     }
 }
 
-/// Fetch compose logs (non-follow mode).
+/// Fetch compose logs.
 pub fn fetch(request: &ComposeLogRequest, project_root: &Path) -> Result<Vec<String>> {
     let mut args = vec!["compose".to_string(), "logs".to_string()];
+
+    if request.follow {
+        args.push("--follow".to_string());
+    }
 
     if let Some(tail) = request.tail {
         args.push("--tail".to_string());
@@ -38,6 +42,11 @@ pub fn fetch(request: &ComposeLogRequest, project_root: &Path) -> Result<Vec<Str
         .current_dir(project_root)
         .output()
         .context("Failed to execute docker compose logs")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!("docker compose logs failed: {}", stderr);
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

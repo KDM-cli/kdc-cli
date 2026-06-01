@@ -145,15 +145,64 @@ pub fn plan(capabilities: &ProjectCapabilities, runtime: &RuntimeCapabilities) -
     DeploymentPlan { steps, blockers }
 }
 
+pub trait CommandRunner {
+    fn run(
+        &self,
+        cmd: &str,
+        args: &[&str],
+        current_dir: Option<&std::path::Path>,
+    ) -> Result<std::process::Output>;
+}
+
+pub struct RealCommandRunner;
+
+impl CommandRunner for RealCommandRunner {
+    fn run(
+        &self,
+        cmd: &str,
+        args: &[&str],
+        current_dir: Option<&std::path::Path>,
+    ) -> Result<std::process::Output> {
+        let mut command = Command::new(cmd);
+        command.args(args);
+        if let Some(dir) = current_dir {
+            command.current_dir(dir);
+        }
+        command
+            .output()
+            .context(format!("Failed to execute {}", cmd))
+    }
+}
+
 /// Execute the deployment pipeline against a real project.
 pub fn execute_pipeline(
     plan: &DeploymentPlan,
     project: &ProjectContext,
     capabilities: &ProjectCapabilities,
+    environment_str: &str,
+) -> Result<PipelineExecution> {
+    execute_pipeline_with_runner(
+        plan,
+        project,
+        capabilities,
+        environment_str,
+        &RealCommandRunner,
+    )
+}
+
+pub fn execute_pipeline_with_runner(
+    plan: &DeploymentPlan,
+    project: &ProjectContext,
+    capabilities: &ProjectCapabilities,
+    environment_str: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<PipelineExecution> {
     if !plan.ready() {
         anyhow::bail!("Deployment plan has blockers: {}", plan.blockers.join(", "));
     }
+
+    let env = crate::deploy::environments::from_string(environment_str);
+    let namespace = crate::deploy::environments::resolve_namespace(&env);
 
     let mut results = Vec::new();
     let mut overall_success = true;
@@ -161,11 +210,16 @@ pub fn execute_pipeline(
     for step in &plan.steps {
         let start = Instant::now();
         let step_result = match step {
-            PipelineStep::Build => execute_build_step(project),
+            PipelineStep::Build => execute_build_step(project, runner),
             PipelineStep::DockerBuild => execute_docker_build_step(project),
             PipelineStep::DockerPush => execute_docker_push_step(project),
-            PipelineStep::DeploymentUpdate => execute_deployment_update_step(project, capabilities),
-            PipelineStep::RolloutVerification => execute_rollout_verification_step(),
+            PipelineStep::DeploymentUpdate => {
+                execute_deployment_update_step(project, capabilities, &namespace, runner)
+            }
+            PipelineStep::RolloutVerification => {
+                let deployment_name = project.name.to_lowercase().replace(' ', "-");
+                execute_rollout_verification_step(&deployment_name, &namespace, runner)
+            }
         };
         let duration_secs = start.elapsed().as_secs_f64();
 
@@ -198,7 +252,7 @@ pub fn execute_pipeline(
     })
 }
 
-fn execute_build_step(project: &ProjectContext) -> Result<String> {
+fn execute_build_step(project: &ProjectContext, runner: &dyn CommandRunner) -> Result<String> {
     let build_cmd =
         crate::templates::stacks::build_command(project.stack).unwrap_or("echo 'No build step'");
 
@@ -207,11 +261,7 @@ fn execute_build_step(project: &ProjectContext) -> Result<String> {
         return Ok("No build command for this stack".to_string());
     }
 
-    let output = Command::new(parts[0])
-        .args(&parts[1..])
-        .current_dir(&project.root)
-        .output()
-        .with_context(|| format!("Failed to execute build command: {build_cmd}"))?;
+    let output = runner.run(parts[0], &parts[1..], Some(&project.root))?;
 
     if output.status.success() {
         Ok(format!("Build completed: {build_cmd}"))
@@ -247,23 +297,25 @@ fn execute_docker_push_step(project: &ProjectContext) -> Result<String> {
 fn execute_deployment_update_step(
     project: &ProjectContext,
     capabilities: &ProjectCapabilities,
+    namespace: &str,
+    runner: &dyn CommandRunner,
 ) -> Result<String> {
     if !capabilities.kubernetes {
         return Ok("No Kubernetes manifests to apply".to_string());
     }
 
-    // Apply all detected Kubernetes manifests.
     let k8s_dir = project.root.join("k8s");
-    let manifest_path = if k8s_dir.exists() {
-        k8s_dir.to_string_lossy().to_string()
-    } else {
-        project.root.to_string_lossy().to_string()
-    };
+    if !k8s_dir.exists() || !k8s_dir.is_dir() {
+        anyhow::bail!("k8s/ directory is absent");
+    }
 
-    let output = Command::new("kubectl")
-        .args(["apply", "-f", &manifest_path])
-        .output()
-        .context("Failed to execute kubectl apply")?;
+    let manifest_path = k8s_dir.to_string_lossy().to_string();
+
+    let output = runner.run(
+        "kubectl",
+        &["apply", "-f", &manifest_path, "-n", namespace],
+        None,
+    )?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -274,11 +326,23 @@ fn execute_deployment_update_step(
     }
 }
 
-fn execute_rollout_verification_step() -> Result<String> {
-    let output = Command::new("kubectl")
-        .args(["rollout", "status", "deployment", "--timeout=120s"])
-        .output()
-        .context("Failed to execute kubectl rollout status")?;
+fn execute_rollout_verification_step(
+    name: &str,
+    namespace: &str,
+    runner: &dyn CommandRunner,
+) -> Result<String> {
+    let output = runner.run(
+        "kubectl",
+        &[
+            "rollout",
+            "status",
+            &format!("deployment/{}", name),
+            "-n",
+            namespace,
+            "--timeout=120s",
+        ],
+        None,
+    )?;
 
     if output.status.success() {
         Ok("Rollout verified successfully".to_string())
@@ -360,5 +424,132 @@ mod tests {
         assert!(rendered.contains("FAILED"));
         assert!(rendered.contains("✓ Build Application"));
         assert!(rendered.contains("✗ Docker Build"));
+    }
+}
+
+#[cfg(test)]
+mod pipeline_mock_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    struct MockRunner {
+        calls: Mutex<Vec<(String, Vec<String>)>>,
+        success: bool,
+    }
+
+    impl CommandRunner for MockRunner {
+        fn run(
+            &self,
+            cmd: &str,
+            args: &[&str],
+            _current_dir: Option<&std::path::Path>,
+        ) -> Result<std::process::Output> {
+            self.calls.lock().unwrap().push((
+                cmd.to_string(),
+                args.iter().map(|s| s.to_string()).collect(),
+            ));
+            let status = if self.success {
+                Command::new("true").status().unwrap()
+            } else {
+                Command::new("false").status().unwrap()
+            };
+            Ok(std::process::Output {
+                status,
+                stdout: b"mock-output".to_vec(),
+                stderr: b"mock-error".to_vec(),
+            })
+        }
+    }
+
+    #[test]
+    fn test_execute_deployment_update_step() {
+        let temp = std::env::temp_dir().join(format!(
+            "kdc-k8s-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(temp.join("k8s")).unwrap();
+
+        let project = ProjectContext {
+            name: "test-proj".to_string(),
+            root: temp.clone(),
+            stack: crate::domain::project::ProjectStack::Rust,
+            assets: vec![],
+        };
+        let caps = ProjectCapabilities {
+            kubernetes: true,
+            ..Default::default()
+        };
+        let runner = MockRunner {
+            calls: Mutex::new(vec![]),
+            success: true,
+        };
+
+        let result = execute_deployment_update_step(&project, &caps, "my-namespace", &runner);
+        assert!(result.is_ok());
+
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "kubectl");
+        assert!(calls[0].1.contains(&"-n".to_string()));
+        assert!(calls[0].1.contains(&"my-namespace".to_string()));
+        assert!(calls[0]
+            .1
+            .contains(&temp.join("k8s").to_string_lossy().to_string()));
+
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn test_execute_deployment_update_step_missing_k8s() {
+        let temp = std::env::temp_dir().join(format!(
+            "kdc-k8s-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&temp).unwrap(); // no k8s folder
+
+        let project = ProjectContext {
+            name: "test-proj".to_string(),
+            root: temp.clone(),
+            stack: crate::domain::project::ProjectStack::Rust,
+            assets: vec![],
+        };
+        let caps = ProjectCapabilities {
+            kubernetes: true,
+            ..Default::default()
+        };
+        let runner = MockRunner {
+            calls: Mutex::new(vec![]),
+            success: true,
+        };
+
+        let result = execute_deployment_update_step(&project, &caps, "my-namespace", &runner);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "k8s/ directory is absent");
+
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn test_execute_rollout_verification_step() {
+        let runner = MockRunner {
+            calls: Mutex::new(vec![]),
+            success: true,
+        };
+
+        let result = execute_rollout_verification_step("my-app", "my-namespace", &runner);
+        assert!(result.is_ok());
+
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "kubectl");
+        assert!(calls[0].1.contains(&"deployment/my-app".to_string()));
+        assert!(calls[0].1.contains(&"-n".to_string()));
+        assert!(calls[0].1.contains(&"my-namespace".to_string()));
     }
 }

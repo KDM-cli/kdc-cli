@@ -11,14 +11,9 @@ pub struct ContainerSummary {
     pub ports: String,
 }
 
-/// List running Docker containers.
-pub fn list() -> Result<Vec<ContainerSummary>> {
+fn list_with_args(args: &[&str]) -> Result<Vec<ContainerSummary>> {
     let output = Command::new("docker")
-        .args([
-            "ps",
-            "--format",
-            "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
-        ])
+        .args(args)
         .output()
         .context("Failed to execute docker ps")?;
 
@@ -50,44 +45,23 @@ pub fn list() -> Result<Vec<ContainerSummary>> {
     Ok(containers)
 }
 
+/// List running Docker containers.
+pub fn list() -> Result<Vec<ContainerSummary>> {
+    list_with_args(&[
+        "ps",
+        "--format",
+        "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+    ])
+}
+
 /// List all Docker containers (including stopped).
 pub fn list_all() -> Result<Vec<ContainerSummary>> {
-    let output = Command::new("docker")
-        .args([
-            "ps",
-            "-a",
-            "--format",
-            "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
-        ])
-        .output()
-        .context("Failed to execute docker ps -a")?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        anyhow::bail!("docker ps -a failed: {err}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let containers = stdout
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(5, '\t').collect();
-            if parts.len() >= 4 {
-                Some(ContainerSummary {
-                    id: parts[0].to_string(),
-                    name: parts[1].to_string(),
-                    image: parts[2].to_string(),
-                    status: parts[3].to_string(),
-                    ports: parts.get(4).unwrap_or(&"").to_string(),
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    Ok(containers)
+    list_with_args(&[
+        "ps",
+        "-a",
+        "--format",
+        "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+    ])
 }
 
 /// Inspect a container and return the raw JSON output.
@@ -120,5 +94,8 @@ mod tests {
         };
         assert_eq!(container.id, "abc123");
         assert_eq!(container.name, "my-app");
+        assert_eq!(container.image, "nginx:latest");
+        assert_eq!(container.status, "Up 5 minutes");
+        assert_eq!(container.ports, "0.0.0.0:80->80/tcp");
     }
 }

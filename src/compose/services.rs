@@ -34,6 +34,11 @@ pub fn running(project_root: &Path) -> Result<Vec<String>> {
         .output()
         .context("Failed to execute docker compose ps --services")?;
 
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!("docker compose ps --services failed: {err}");
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let services = stdout
         .lines()

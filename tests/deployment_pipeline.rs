@@ -155,21 +155,25 @@ fn environment_from_string_parses() {
     assert_eq!(from_string("unknown"), Environment::Development);
 }
 
+fn make_record(ts: &str, env: &str, success: bool) -> DeploymentRecord {
+    DeploymentRecord {
+        timestamp: ts.to_string(),
+        environment: env.to_string(),
+        image_tag: "app:latest".to_string(),
+        success,
+        steps_completed: 5,
+        steps_total: 5,
+        duration_secs: 10.0,
+        message: "ok".to_string(),
+    }
+}
+
 #[test]
 fn deployment_history_records_and_truncates() {
     let mut history = DeploymentHistory::default();
 
     for i in 0..60 {
-        history.record(DeploymentRecord {
-            timestamp: format!("ts-{i}"),
-            environment: "development".to_string(),
-            image_tag: "app:latest".to_string(),
-            success: i % 2 == 0,
-            steps_completed: 5,
-            steps_total: 5,
-            duration_secs: 10.0,
-            message: "ok".to_string(),
-        });
+        history.record(make_record(&format!("ts-{i}"), "development", i % 2 == 0));
     }
 
     assert_eq!(history.total_deployments(), 50);
@@ -178,26 +182,8 @@ fn deployment_history_records_and_truncates() {
 #[test]
 fn deployment_history_last_success() {
     let mut history = DeploymentHistory::default();
-    history.record(DeploymentRecord {
-        timestamp: "ts-1".to_string(),
-        environment: "development".to_string(),
-        image_tag: "app:latest".to_string(),
-        success: false,
-        steps_completed: 3,
-        steps_total: 5,
-        duration_secs: 5.0,
-        message: "failed".to_string(),
-    });
-    history.record(DeploymentRecord {
-        timestamp: "ts-2".to_string(),
-        environment: "staging".to_string(),
-        image_tag: "app:v1.0".to_string(),
-        success: true,
-        steps_completed: 5,
-        steps_total: 5,
-        duration_secs: 12.0,
-        message: "ok".to_string(),
-    });
+    history.record(make_record("ts-1", "development", false));
+    history.record(make_record("ts-2", "staging", true));
 
     let last = history.last_success().unwrap();
     assert!(last.success);
@@ -215,16 +201,7 @@ fn deployment_history_yaml_round_trip() {
     ));
 
     let mut history = DeploymentHistory::default();
-    history.record(DeploymentRecord {
-        timestamp: "ts".to_string(),
-        environment: "development".to_string(),
-        image_tag: "app:latest".to_string(),
-        success: true,
-        steps_completed: 5,
-        steps_total: 5,
-        duration_secs: 10.0,
-        message: "ok".to_string(),
-    });
+    history.record(make_record("ts", "development", true));
     history.save(&path).unwrap();
 
     let loaded = DeploymentHistory::load_or_default(&path).unwrap();

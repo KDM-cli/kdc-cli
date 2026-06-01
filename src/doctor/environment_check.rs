@@ -1,11 +1,11 @@
 use std::process::Command;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DoctorReport {
     pub checks: Vec<DoctorCheck>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DoctorCheck {
     pub name: String,
     pub ok: bool,
@@ -32,23 +32,7 @@ impl DoctorReport {
 
     /// Export the doctor report as a JSON string for structured consumption.
     pub fn export_json(&self) -> String {
-        let entries: Vec<String> = self
-            .checks
-            .iter()
-            .map(|check| {
-                let suggestion = check
-                    .suggestion
-                    .as_ref()
-                    .map(|s| format!("\"{s}\""))
-                    .unwrap_or_else(|| "null".to_string());
-                format!(
-                    "  {{\"name\":\"{}\",\"ok\":{},\"detail\":\"{}\",\"suggestion\":{}}}",
-                    check.name, check.ok, check.detail, suggestion
-                )
-            })
-            .collect();
-
-        format!("[\n{}\n]", entries.join(",\n"))
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Count how many checks passed.
@@ -228,28 +212,58 @@ fn registry_connectivity_check(registry_url: &str) -> DoctorCheck {
     // needing credentials for the probe itself.
     match Command::new("docker").args(["info"]).output() {
         Ok(output) if output.status.success() => {
-            let info = String::from_utf8_lossy(&output.stdout);
-            if info.contains("Registry") || !registry_url.is_empty() {
-                DoctorCheck {
-                    name: "Registry Connectivity".to_string(),
-                    ok: true,
-                    detail: format!("Docker daemon reachable; registry target: {registry_url}"),
-                    suggestion: None,
-                }
+            let image_target = if registry_url == "docker.io" {
+                "docker.io/library/alpine:latest".to_string()
             } else {
-                DoctorCheck {
+                format!("{}/alpine:latest", registry_url.trim_end_matches('/'))
+            };
+
+            match Command::new("docker")
+                .args(["manifest", "inspect", &image_target])
+                .output()
+            {
+                Ok(out) => {
+                    if out.status.success() {
+                        let detail = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        let detail_snippet = if detail.len() > 100 {
+                            format!("{}...", &detail[..100])
+                        } else {
+                            detail
+                        };
+                        DoctorCheck {
+                            name: "Registry Connectivity".to_string(),
+                            ok: true,
+                            detail: format!(
+                                "Successfully inspected {}: {}",
+                                image_target, detail_snippet
+                            ),
+                            suggestion: None,
+                        }
+                    } else {
+                        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                        DoctorCheck {
+                            name: "Registry Connectivity".to_string(),
+                            ok: false,
+                            detail: format!("Failed to inspect {}: {}", image_target, err),
+                            suggestion: Some(
+                                "Run 'docker login' or check credentials/connectivity".to_string(),
+                            ),
+                        }
+                    }
+                }
+                Err(err) => DoctorCheck {
                     name: "Registry Connectivity".to_string(),
                     ok: false,
-                    detail: format!("Cannot verify registry: {registry_url}"),
-                    suggestion: Some("Run docker login to authenticate".to_string()),
-                }
+                    detail: format!("Failed to run docker manifest command: {}", err),
+                    suggestion: Some("Ensure Docker is installed and running".to_string()),
+                },
             }
         }
         _ => DoctorCheck {
             name: "Registry Connectivity".to_string(),
             ok: false,
-            detail: "Docker is not available for registry check".to_string(),
-            suggestion: Some("Install and start Docker first".to_string()),
+            detail: "Docker daemon is not available".to_string(),
+            suggestion: Some("Start Docker Desktop or the Docker service first".to_string()),
         },
     }
 }
@@ -389,8 +403,9 @@ mod tests {
         };
 
         let json = report.export_json();
-        assert!(json.contains("\"name\":\"Docker CLI\""));
-        assert!(json.contains("\"ok\":true"));
-        assert!(json.contains("\"suggestion\":null"));
+        let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(val["checks"][0]["name"], "Docker CLI");
+        assert_eq!(val["checks"][0]["ok"], true);
+        assert_eq!(val["checks"][0]["suggestion"], serde_json::Value::Null);
     }
 }

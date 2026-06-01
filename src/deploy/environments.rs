@@ -16,7 +16,14 @@ pub fn from_string(s: &str) -> Environment {
     match s.to_lowercase().as_str() {
         "staging" | "stg" => Environment::Staging,
         "production" | "prod" => Environment::Production,
-        _ => Environment::Development,
+        "development" | "dev" | "" => Environment::Development,
+        other => {
+            tracing::warn!(
+                "Unknown environment input '{}', falling back to Development",
+                other
+            );
+            Environment::Development
+        }
     }
 }
 

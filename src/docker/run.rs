@@ -63,8 +63,14 @@ pub fn execute(request: &RunRequest) -> Result<RunResult> {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
+    let container_id = if request.detached && output.status.success() {
+        stdout.clone()
+    } else {
+        String::new()
+    };
+
     Ok(RunResult {
-        container_id: stdout.clone(),
+        container_id,
         success: output.status.success(),
         output: if output.status.success() {
             stdout

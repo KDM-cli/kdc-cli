@@ -66,27 +66,7 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Some(Command::Doctor { full, json }) => {
-            let report = if full {
-                let settings =
-                    config::settings::Settings::load_or_default(&config::paths::config_file())?;
-                doctor::environment_check::run_full(settings.registry.as_deref())
-            } else {
-                doctor::environment_check::run()
-            };
-
-            if json {
-                println!("{}", report.export_json());
-                // Also save to the doctor report file.
-                let report_path = config::paths::doctor_report_file();
-                if let Some(parent) = report_path.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                std::fs::write(&report_path, report.export_json())?;
-                println!("Report saved to {}", report_path.display());
-            } else {
-                println!("{}", report.render());
-                println!("\n{}", report.summary_line());
-            }
+            run_doctor(full, json)?;
         }
         Some(Command::InitConfig) => {
             let path = config::paths::config_file();
@@ -131,50 +111,7 @@ fn main() -> anyhow::Result<()> {
             println!("{}", plan.render());
         }
         Some(Command::Deploy { environment }) => {
-            let state = startup::initialize(cli.project)?;
-            let plan = deploy::pipeline::plan(&state.capabilities, &state.runtime);
-
-            if !plan.ready() {
-                println!("Deployment plan has blockers:");
-                for blocker in &plan.blockers {
-                    println!("  - {blocker}");
-                }
-                std::process::exit(1);
-            }
-
-            println!("Executing deployment pipeline...\n");
-            let execution =
-                deploy::pipeline::execute_pipeline(&plan, &state.project, &state.capabilities)?;
-            println!("{}", execution.render());
-
-            // Record the deployment in history.
-            let env = deploy::environments::from_string(&environment);
-            let history_path = config::paths::deploy_history_file();
-            let mut history = deploy::history::DeploymentHistory::load_or_default(&history_path)?;
-            history.record(deploy::history::DeploymentRecord {
-                timestamp: chrono_timestamp(),
-                environment: env.to_string(),
-                image_tag: format!(
-                    "{}:latest",
-                    state.project.name.to_lowercase().replace(' ', "-")
-                ),
-                success: execution.overall_success,
-                steps_completed: execution.results.iter().filter(|r| r.success).count(),
-                steps_total: execution.results.len(),
-                duration_secs: execution.total_duration_secs(),
-                message: if execution.overall_success {
-                    "All steps completed".to_string()
-                } else {
-                    execution
-                        .results
-                        .iter()
-                        .find(|r| !r.success)
-                        .map(|r| r.message.clone())
-                        .unwrap_or_else(|| "Unknown failure".to_string())
-                },
-            });
-            history.save(&history_path)?;
-            println!("\nDeployment recorded in {}", history_path.display());
+            run_deploy(cli.project, &environment)?;
         }
         None => {
             let state = startup::initialize_with_options(
@@ -190,13 +127,90 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Generate an ISO 8601 timestamp string without pulling in the chrono crate.
+fn run_doctor(full: bool, json: bool) -> anyhow::Result<()> {
+    let report = if full {
+        let settings = config::settings::Settings::load_or_default(&config::paths::config_file())?;
+        doctor::environment_check::run_full(settings.registry.as_deref())
+    } else {
+        doctor::environment_check::run()
+    };
+
+    if json {
+        println!("{}", report.export_json());
+        // Also save to the doctor report file.
+        let report_path = config::paths::doctor_report_file();
+        if let Some(parent) = report_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&report_path, report.export_json())?;
+        println!("Report saved to {}", report_path.display());
+    } else {
+        println!("{}", report.render());
+        println!("\n{}", report.summary_line());
+    }
+    Ok(())
+}
+
+fn run_deploy(project: std::path::PathBuf, environment: &str) -> anyhow::Result<()> {
+    let state = startup::initialize(project)?;
+    let plan = deploy::pipeline::plan(&state.capabilities, &state.runtime);
+
+    if !plan.ready() {
+        let mut msg = "Deployment plan has blockers:\n".to_string();
+        for blocker in &plan.blockers {
+            msg.push_str(&format!("  - {}\n", blocker));
+        }
+        anyhow::bail!("{}", msg.trim_end());
+    }
+
+    println!("Executing deployment pipeline...\n");
+    let execution = deploy::pipeline::execute_pipeline(
+        &plan,
+        &state.project,
+        &state.capabilities,
+        environment,
+    )?;
+    println!("{}", execution.render());
+
+    // Record the deployment in history.
+    let env = deploy::environments::from_string(environment);
+    let history_path = config::paths::deploy_history_file();
+    let mut history = deploy::history::DeploymentHistory::load_or_default(&history_path)?;
+    history.record(deploy::history::DeploymentRecord {
+        timestamp: chrono_timestamp(),
+        environment: env.to_string(),
+        image_tag: format!(
+            "{}:latest",
+            state.project.name.to_lowercase().replace(' ', "-")
+        ),
+        success: execution.overall_success,
+        steps_completed: execution.results.iter().filter(|r| r.success).count(),
+        steps_total: execution.results.len(),
+        duration_secs: execution.total_duration_secs(),
+        message: if execution.overall_success {
+            "All steps completed".to_string()
+        } else {
+            execution
+                .results
+                .iter()
+                .find(|r| !r.success)
+                .map(|r| r.message.clone())
+                .unwrap_or_else(|| "Unknown failure".to_string())
+        },
+    });
+    history.save(&history_path)?;
+    println!("\nDeployment recorded in {}", history_path.display());
+    Ok(())
+}
+
+/// Generate an ISO 8601 timestamp string.
 fn chrono_timestamp() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    let now = time::OffsetDateTime::now_utc();
+    if let Ok(formatted) = now.format(&time::format_description::well_known::Rfc3339) {
+        return formatted;
+    }
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
-    let secs = duration.as_secs();
-    // Simple epoch-based timestamp.
-    format!("epoch:{secs}")
+    format!("epoch:{}", duration.as_secs())
 }

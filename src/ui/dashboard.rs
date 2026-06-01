@@ -481,42 +481,41 @@ fn render_panel(
     );
 }
 
-fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    // Dynamic centered rect with a minimum height to prevent squishing
-    let width = (area.width * 65 / 100).clamp(60, area.width);
-    let height = 25.clamp(20, area.height);
-    let x = (area.width - width) / 2;
-    let y = (area.height - height) / 2;
-    let welcome_area = Rect {
+fn welcome_rect(area: Rect) -> Rect {
+    let width_u32 = (area.width as u32 * 65 / 100)
+        .max(60)
+        .min(area.width as u32);
+    let height_u32 = 25u32.min(area.height as u32).max(20);
+
+    let width = width_u32 as u16;
+    let height = height_u32 as u16;
+    let x = area.width.saturating_sub(width) / 2;
+    let y = area.height.saturating_sub(height) / 2;
+    Rect {
         x,
         y,
         width,
         height,
-    };
+    }
+}
 
-    frame.render_widget(Clear, welcome_area);
-
+fn render_outer_block(
+    frame: &mut Frame,
+    welcome_area: Rect,
+    palette: theme::Palette,
+) -> Block<'static> {
     let outer_block = Block::default().borders(Borders::ALL).title(Span::styled(
         " KDC - Welcome ",
         Style::default()
             .fg(palette.accent)
             .add_modifier(Modifier::BOLD),
     ));
+    frame.render_widget(Clear, welcome_area);
     frame.render_widget(outer_block.clone(), welcome_area);
+    outer_block
+}
 
-    let inner_area = outer_block.inner(welcome_area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5), // ASCII art
-            Constraint::Length(4), // Subtitle, link, author
-            Constraint::Length(8), // Project card
-            Constraint::Min(5),    // Options
-        ])
-        .split(inner_area);
-
-    // 1. ASCII Art
+fn render_ascii_banner(frame: &mut Frame, chunk: Rect, palette: theme::Palette) {
     let ascii_art = vec![
         Line::from(Span::styled(
             "  _  ______   ____ ",
@@ -551,10 +550,11 @@ fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette:
     ];
     frame.render_widget(
         Paragraph::new(ascii_art).alignment(Alignment::Center),
-        chunks[0],
+        chunk,
     );
+}
 
-    // 2. Subtitle, Link, and Author
+fn render_subtitle(frame: &mut Frame, chunk: Rect, palette: theme::Palette) {
     let subtitle_info = vec![
         Line::from(Span::styled(
             "Kubernetes & Docker Commander like a boss.",
@@ -574,10 +574,30 @@ fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette:
     ];
     frame.render_widget(
         Paragraph::new(subtitle_info).alignment(Alignment::Center),
-        chunks[1],
+        chunk,
     );
+}
 
-    // 3. Project Details Card
+fn capability_line(label: &str, present: bool, palette: theme::Palette) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("  {}: ", label), Style::default().fg(palette.muted)),
+        Span::styled(
+            if present { "Found" } else { "Missing" },
+            Style::default().fg(if present {
+                palette.success
+            } else {
+                palette.warning
+            }),
+        ),
+    ])
+}
+
+fn render_capabilities_card(
+    frame: &mut Frame,
+    chunk: Rect,
+    state: &AppState,
+    palette: theme::Palette,
+) {
     let mut details = Vec::new();
     details.push(Line::from(vec![
         Span::styled("  Root: ", Style::default().fg(palette.muted)),
@@ -593,66 +613,26 @@ fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette:
             Style::default().fg(palette.text),
         ),
     ]));
-    details.push(Line::from(vec![
-        Span::styled("  Dockerfile: ", Style::default().fg(palette.muted)),
-        Span::styled(
-            if state.capabilities.docker {
-                "Found"
-            } else {
-                "Missing"
-            },
-            Style::default().fg(if state.capabilities.docker {
-                palette.success
-            } else {
-                palette.warning
-            }),
-        ),
-    ]));
-    details.push(Line::from(vec![
-        Span::styled("  Compose: ", Style::default().fg(palette.muted)),
-        Span::styled(
-            if state.capabilities.compose {
-                "Found"
-            } else {
-                "Missing"
-            },
-            Style::default().fg(if state.capabilities.compose {
-                palette.success
-            } else {
-                palette.warning
-            }),
-        ),
-    ]));
-    details.push(Line::from(vec![
-        Span::styled("  Kubernetes: ", Style::default().fg(palette.muted)),
-        Span::styled(
-            if state.capabilities.kubernetes {
-                "Found"
-            } else {
-                "Missing"
-            },
-            Style::default().fg(if state.capabilities.kubernetes {
-                palette.success
-            } else {
-                palette.warning
-            }),
-        ),
-    ]));
-    details.push(Line::from(vec![
-        Span::styled("  Helm Chart: ", Style::default().fg(palette.muted)),
-        Span::styled(
-            if state.capabilities.helm {
-                "Found"
-            } else {
-                "Missing"
-            },
-            Style::default().fg(if state.capabilities.helm {
-                palette.success
-            } else {
-                palette.warning
-            }),
-        ),
-    ]));
+    details.push(capability_line(
+        "Dockerfile",
+        state.capabilities.docker,
+        palette,
+    ));
+    details.push(capability_line(
+        "Compose",
+        state.capabilities.compose,
+        palette,
+    ));
+    details.push(capability_line(
+        "Kubernetes",
+        state.capabilities.kubernetes,
+        palette,
+    ));
+    details.push(capability_line(
+        "Helm Chart",
+        state.capabilities.helm,
+        palette,
+    ));
 
     frame.render_widget(
         Paragraph::new(details)
@@ -662,8 +642,28 @@ fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette:
                     .borders(Borders::ALL),
             )
             .style(Style::default().fg(palette.text)),
-        chunks[2],
+        chunk,
     );
+}
+
+fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
+    let welcome_area = welcome_rect(area);
+    let outer_block = render_outer_block(frame, welcome_area, palette);
+    let inner_area = outer_block.inner(welcome_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // ASCII art
+            Constraint::Length(4), // Subtitle, link, author
+            Constraint::Length(8), // Project card
+            Constraint::Min(5),    // Options
+        ])
+        .split(inner_area);
+
+    render_ascii_banner(frame, chunks[0], palette);
+    render_subtitle(frame, chunks[1], palette);
+    render_capabilities_card(frame, chunks[2], state, palette);
 
     // 4. Action/Choice List
     let choices = [

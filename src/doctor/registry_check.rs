@@ -25,21 +25,83 @@ impl Default for RegistryConfig {
     }
 }
 
+fn run_command_with_timeout(
+    cmd: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> anyhow::Result<std::process::Output> {
+    let mut child = Command::new(cmd)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let start = std::time::Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            let output = child.wait_with_output()?;
+            return Ok(output);
+        }
+        if start.elapsed() >= timeout {
+            child.kill()?;
+            anyhow::bail!("Command timed out after {:?}", timeout);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
 /// Check if a container registry is reachable by verifying Docker connectivity.
 pub fn check_registry(registry: &str) -> RegistryStatus {
-    // We use `docker info` as a basic connectivity check. A more thorough check
-    // would attempt to pull a manifest, but that requires auth for private registries.
-    match Command::new("docker").arg("info").output() {
-        Ok(output) if output.status.success() => {
-            // Docker daemon is reachable; registry check is best-effort.
-            if registry.is_empty() {
-                RegistryStatus::Unknown
-            } else {
+    if registry.is_empty() {
+        return RegistryStatus::Unknown;
+    }
+
+    let domain = registry
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+
+    let target_domain = if domain == "docker.io" {
+        "registry-1.docker.io"
+    } else {
+        domain
+    };
+
+    let url = format!("https://{}/v2/", target_domain);
+
+    match ureq::head(&url)
+        .timeout(std::time::Duration::from_secs(3))
+        .call()
+    {
+        Ok(resp) => {
+            let code = resp.status();
+            if code == 200 || code == 401 {
                 RegistryStatus::Connected
+            } else {
+                RegistryStatus::Disconnected
             }
         }
-        Ok(_) => RegistryStatus::Disconnected,
-        Err(_) => RegistryStatus::Unknown,
+        Err(ureq::Error::Status(code, _)) => {
+            if code == 401 {
+                RegistryStatus::Connected
+            } else {
+                RegistryStatus::Disconnected
+            }
+        }
+        Err(_) => {
+            let has_docker = match run_command_with_timeout(
+                "docker",
+                &["info"],
+                std::time::Duration::from_secs(2),
+            ) {
+                Ok(output) => output.status.success(),
+                Err(_) => false,
+            };
+            if has_docker {
+                RegistryStatus::Connected
+            } else {
+                RegistryStatus::Disconnected
+            }
+        }
     }
 }
 

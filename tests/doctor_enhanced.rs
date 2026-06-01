@@ -25,11 +25,13 @@ fn doctor_report_export_json() {
     };
 
     let json = report.export_json();
-    assert!(json.contains("\"name\":\"Docker CLI\""));
-    assert!(json.contains("\"ok\":true"));
-    assert!(json.contains("\"ok\":false"));
-    assert!(json.contains("\"suggestion\":null"));
-    assert!(json.contains("\"suggestion\":\"Start Docker Desktop\""));
+    let val: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(val["checks"][0]["name"], "Docker CLI");
+    assert_eq!(val["checks"][0]["ok"], true);
+    assert_eq!(val["checks"][0]["suggestion"], serde_json::Value::Null);
+    assert_eq!(val["checks"][1]["name"], "Docker Daemon");
+    assert_eq!(val["checks"][1]["ok"], false);
+    assert_eq!(val["checks"][1]["suggestion"], "Start Docker Desktop");
 }
 
 #[test]

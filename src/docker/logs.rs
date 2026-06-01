@@ -15,11 +15,21 @@ pub fn fetch(container_id: &str, tail: usize) -> Result<Vec<DockerLogLine>> {
         .output()
         .context("Failed to execute docker logs")?;
 
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!("docker logs failed: {stderr}");
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Docker sends some log output to stderr, so combine both streams.
-    let combined = format!("{stdout}{stderr}");
+    let combined = if stdout.ends_with('\n') || stdout.is_empty() {
+        format!("{stdout}{stderr}")
+    } else {
+        format!("{stdout}\n{stderr}")
+    };
+
     let lines = combined
         .lines()
         .filter(|line| !line.is_empty())
@@ -38,9 +48,20 @@ pub fn fetch_all(container_id: &str) -> Result<Vec<DockerLogLine>> {
         .output()
         .context("Failed to execute docker logs")?;
 
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!("docker logs failed: {stderr}");
+    }
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{stdout}{stderr}");
+
+    // Docker sends some log output to stderr, so combine both streams.
+    let combined = if stdout.ends_with('\n') || stdout.is_empty() {
+        format!("{stdout}{stderr}")
+    } else {
+        format!("{stdout}\n{stderr}")
+    };
 
     let lines = combined
         .lines()

@@ -7,4 +7,6 @@ pub mod sidebar;
 pub mod state;
 pub mod statusbar;
 pub mod theme;
+pub mod welcome;
 pub mod widgets;
+

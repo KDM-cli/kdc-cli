@@ -18,17 +18,17 @@ Or install manually from the release tarball:
 
 ```bash
 # Apple Silicon (M1/M2/M3)
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v<VERSION>-aarch64-apple-darwin.tar.gz
-tar -xzf kdc-v<VERSION>-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-aarch64-apple-darwin.tar.gz
+tar -xzf kdc-vv0.1.0-aarch64-apple-darwin.tar.gz
 sudo mv kdc /usr/local/bin/
 
 # Intel
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v<VERSION>-x86_64-apple-darwin.tar.gz
-tar -xzf kdc-v<VERSION>-x86_64-apple-darwin.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-x86_64-apple-darwin.tar.gz
+tar -xzf kdc-vv0.1.0-x86_64-apple-darwin.tar.gz
 sudo mv kdc /usr/local/bin/
 ```
 
-Replace `<VERSION>` with the latest release tag (e.g. `0.1.0`). Find all releases at the [releases page](https://github.com/KDM-cli/kdc-cli/releases).
+Replace `v0.1.0` with the latest release tag (e.g. `0.1.0`). Find all releases at the [releases page](https://github.com/KDM-cli/kdc-cli/releases).
 
 ---
 
@@ -36,35 +36,35 @@ Replace `<VERSION>` with the latest release tag (e.g. `0.1.0`). Find all release
 
 ```bash
 # amd64
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc_<VERSION>_amd64.deb
-sudo dpkg -i kdc_<VERSION>_amd64.deb
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc_v0.1.0_amd64.deb
+sudo dpkg -i kdc_v0.1.0_amd64.deb
 
 # arm64
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc_<VERSION>_arm64.deb
-sudo dpkg -i kdc_<VERSION>_arm64.deb
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc_v0.1.0_arm64.deb
+sudo dpkg -i kdc_v0.1.0_arm64.deb
 ```
 
 ### Linux — Fedora / RHEL / openSUSE (.rpm)
 
 ```bash
 # x86_64
-sudo rpm -i https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-<VERSION>-1.x86_64.rpm
+sudo rpm -i https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v0.1.0-1.x86_64.rpm
 
 # aarch64
-sudo rpm -i https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-<VERSION>-1.aarch64.rpm
+sudo rpm -i https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v0.1.0-1.aarch64.rpm
 ```
 
 ### Linux — tarball (any distro)
 
 ```bash
 # x86_64
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v<VERSION>-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf kdc-v<VERSION>-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf kdc-vv0.1.0-x86_64-unknown-linux-gnu.tar.gz
 sudo mv kdc /usr/local/bin/
 
 # aarch64
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v<VERSION>-aarch64-unknown-linux-gnu.tar.gz
-tar -xzf kdc-v<VERSION>-aarch64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-aarch64-unknown-linux-gnu.tar.gz
+tar -xzf kdc-vv0.1.0-aarch64-unknown-linux-gnu.tar.gz
 sudo mv kdc /usr/local/bin/
 ```
 
@@ -75,7 +75,7 @@ sudo mv kdc /usr/local/bin/
 Download the `.zip` from the [releases page](https://github.com/KDM-cli/kdc-cli/releases/latest):
 
 ```
-kdc-v<VERSION>-x86_64-pc-windows-msvc.zip
+kdc-vv0.1.0-x86_64-pc-windows-msvc.zip
 ```
 
 Extract `kdc.exe` and place it somewhere on your `PATH` (e.g. `C:\Users\<you>\bin\`).

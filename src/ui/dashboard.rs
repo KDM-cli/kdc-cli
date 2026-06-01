@@ -561,7 +561,7 @@ fn render_subtitle(frame: &mut Frame, chunk: Rect, palette: theme::Palette) {
             Style::default().fg(palette.text),
         )),
         Line::from(Span::styled(
-            "https://github.com/utkarsh232005/kdc-cli",
+            "https://github.com/KDM-cli/kdc-cli",
             Style::default().fg(palette.muted),
         )),
         Line::from(vec![

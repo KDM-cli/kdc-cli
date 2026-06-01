@@ -103,9 +103,57 @@ case "$1" in
     fi
     ;;
   get)
-    if [ "$2" = "nodes" ]; then
-      echo "node1 node2"
-    fi
+    case "$2" in
+      nodes)
+        echo "node1 node2"
+        ;;
+      deployments)
+        echo "web 2/2 2 2 3m"
+        ;;
+      deployment)
+        echo "apiVersion: apps/v1"
+        echo "kind: Deployment"
+        ;;
+      pods)
+        echo "web-abc 1/1 Running 0 1m"
+        ;;
+      pod)
+        echo "apiVersion: v1"
+        echo "kind: Pod"
+        ;;
+      services)
+        echo "web ClusterIP 10.0.0.1 <none> 80/TCP 1m"
+        ;;
+      service)
+        echo "apiVersion: v1"
+        echo "kind: Service"
+        ;;
+      ingress)
+        echo "web nginx app.example.com 1.2.3.4 80 1m"
+        ;;
+      configmaps)
+        echo "app-config 1 1m"
+        ;;
+      secrets)
+        echo "app-secret Opaque 1 1m"
+        ;;
+      namespaces)
+        echo "default Active 1d"
+        ;;
+      events)
+        echo "1m Normal Started pod/web Started container"
+        ;;
+    esac
+    ;;
+  logs)
+    echo "pod log 1"
+    echo "pod log 2"
+    ;;
+  delete)
+    echo "$2 \"$3\" deleted"
+    ;;
+  scale)
+    echo "deployment.apps/$3 scaled"
     ;;
   rollout)
     case "$2" in

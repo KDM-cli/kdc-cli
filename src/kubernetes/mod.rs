@@ -1,3 +1,4 @@
+pub mod command;
 pub mod configmaps;
 pub mod deployments;
 pub mod events;

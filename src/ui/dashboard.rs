@@ -18,6 +18,7 @@ use crate::{
     deploy,
     domain::screen::Screen,
     project::analyzer,
+    services::executor::{CommandExecutor, KdcExecutor},
     ui::{
         command_palette, folder_picker,
         state::{FirstLaunchChoice, Notification, NotificationLevel, UiPhase},
@@ -69,10 +70,12 @@ fn run_loop(terminal: &mut DefaultTerminal, state: &mut AppState) -> io::Result<
 
                 match (key.code, key.modifiers) {
                     (KeyCode::Char('q'), _) => break,
+                    (KeyCode::Esc, _) if state.ui.has_execution_output() => {
+                        state.ui.clear_execution_output()
+                    }
                     (KeyCode::Char('p'), KeyModifiers::CONTROL) => state.ui.palette.open(),
                     (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
-                        state.ui.start_scanning();
-                        state.status_message = "Refreshing project scan".to_string();
+                        refresh_project(state)?;
                     }
                     (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
                         route_action(state, "docker.build")
@@ -84,9 +87,18 @@ fn run_loop(terminal: &mut DefaultTerminal, state: &mut AppState) -> io::Result<
                         router::route_to(state, Screen::Monitoring)
                     }
                     (KeyCode::Char('t'), _) => cycle_theme(state),
-                    (KeyCode::Down, _) | (KeyCode::Char('j'), _) => navigation::move_next(state),
-                    (KeyCode::Up, _) | (KeyCode::Char('k'), _) => navigation::move_previous(state),
-                    (KeyCode::Enter, _) => router::select_current_menu(state),
+                    (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+                        state.ui.clear_execution_output();
+                        navigation::move_next(state);
+                    }
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+                        state.ui.clear_execution_output();
+                        navigation::move_previous(state);
+                    }
+                    (KeyCode::Enter, _) => {
+                        state.ui.clear_execution_output();
+                        router::select_current_menu(state);
+                    }
                     _ => {}
                 }
             }
@@ -843,12 +855,10 @@ fn handle_palette_key(state: &mut AppState, code: KeyCode) {
         KeyCode::Enter => {
             let selected = command_palette::search_actions(&state.actions, &state.ui.palette.query)
                 .get(state.ui.palette.selected)
-                .map(|action| (action.screen, action.label.clone()));
-            if let Some((screen, label)) = selected {
-                router::route_to(state, screen);
-                state.status_message = format!("Selected {label}");
+                .map(|action| (action.id.clone(), action.screen, action.label.clone()));
+            if let Some((id, screen, label)) = selected {
                 state.ui.palette.close();
-                state.ui.push_notification(Notification::success(label));
+                execute_action(state, &id, screen, &label);
             }
         }
         _ => {}
@@ -870,15 +880,62 @@ fn route_action(state: &mut AppState, id: &str) {
         });
     if let Some((screen, enabled, label, reason)) = action {
         if enabled {
-            router::route_to(state, screen);
-            state.status_message = format!("Selected {label}");
-            state.ui.push_notification(Notification::success(label));
+            execute_action(state, id, screen, &label);
         } else {
             state.ui.push_notification(Notification::warning(
                 reason.unwrap_or_else(|| "Action unavailable".to_string()),
             ));
         }
     }
+}
+
+fn execute_action(state: &mut AppState, id: &str, screen: Screen, label: &str) {
+    router::route_to(state, screen);
+    let executor = KdcExecutor::new(&state.project);
+    match executor.execute(id) {
+        Ok(result) => {
+            state.status_message = result.message.clone();
+            let mut output = if result.output_lines.is_empty() {
+                vec![result.message.clone()]
+            } else {
+                result.output_lines
+            };
+            if !result.success {
+                output.insert(0, result.message.clone());
+            }
+            state.ui.show_execution_output(label.to_string(), output);
+            if result.success {
+                state
+                    .ui
+                    .push_notification(Notification::success(result.message));
+            } else {
+                state
+                    .ui
+                    .push_notification(Notification::warning(result.message));
+            }
+        }
+        Err(err) => {
+            let message = format!("{label} failed: {err}");
+            state.status_message = message.clone();
+            state
+                .ui
+                .show_execution_output(label.to_string(), vec![message.clone()]);
+            state.ui.push_notification(Notification::warning(message));
+        }
+    }
+}
+
+fn refresh_project(state: &mut AppState) -> io::Result<()> {
+    let root = state.project.root.clone();
+    let active_theme = state.ui.active_theme;
+    let mut refreshed = startup::initialize(root).map_err(io::Error::other)?;
+    refreshed.ui.active_theme = active_theme;
+    refreshed.ui.start_scanning();
+    refreshed
+        .ui
+        .push_notification(Notification::info("Project and runtime refreshed"));
+    *state = refreshed;
+    Ok(())
 }
 
 fn reload_project(state: &mut AppState, path: PathBuf) -> io::Result<()> {

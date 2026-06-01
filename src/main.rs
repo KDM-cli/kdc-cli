@@ -114,17 +114,19 @@ fn main() -> anyhow::Result<()> {
             run_deploy(cli.project, &environment)?;
         }
         None => {
-            let state = startup::initialize_with_options(
-                cli.project,
-                StartupOptions {
-                    force_first_launch: cli.first_launch,
-                },
-            )?;
+            let state =
+                startup::initialize_with_options(cli.project, interactive_startup_options())?;
             ui::dashboard::run(state)?;
         }
     }
 
     Ok(())
+}
+
+fn interactive_startup_options() -> StartupOptions {
+    StartupOptions {
+        force_first_launch: true,
+    }
 }
 
 fn run_doctor(full: bool, json: bool) -> anyhow::Result<()> {
@@ -213,4 +215,14 @@ fn chrono_timestamp() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     format!("epoch:{}", duration.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_interactive_launch_starts_at_folder_selection() {
+        assert!(interactive_startup_options().force_first_launch);
+    }
 }

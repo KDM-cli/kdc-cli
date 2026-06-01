@@ -83,4 +83,19 @@ mod tests {
         assert!(request.deployment_name.is_none());
         assert!(request.target_revision.is_none());
     }
+
+    #[test]
+    fn test_execute_and_history() {
+        crate::utils::test_support::set_mock_path();
+        
+        let request = RollbackRequest {
+            deployment_name: Some("my-app".to_string()),
+            target_revision: Some("2".to_string()),
+        };
+        let res = execute(&request, "default").unwrap();
+        assert!(res.contains("rolled back"));
+
+        let hist = history("my-app", "default").unwrap();
+        assert!(hist.contains("REVISION"));
+    }
 }

@@ -51,10 +51,22 @@ pub fn running(project_root: &Path) -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn services_module_compiles() {
-        // This module relies on the `docker compose` CLI, so we only verify
-        // the module compiles correctly in unit tests.
         let _: fn(&std::path::Path) -> anyhow::Result<Vec<String>> = super::list;
+    }
+
+    #[test]
+    fn test_list_and_running() {
+        crate::utils::test_support::set_mock_path();
+        let path = std::path::Path::new(".");
+        
+        let services = list(path).unwrap();
+        assert_eq!(services, vec!["service1", "service2"]);
+
+        let running_services = running(path).unwrap();
+        assert_eq!(running_services, vec!["service1"]);
     }
 }

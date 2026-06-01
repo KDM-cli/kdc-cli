@@ -59,4 +59,18 @@ mod tests {
         assert_ne!(KubernetesStatus::Connected, KubernetesStatus::Disconnected);
         assert_ne!(KubernetesStatus::Unknown, KubernetesStatus::Connected);
     }
+
+    #[test]
+    fn test_check_cluster_and_nodes() {
+        crate::utils::test_support::set_mock_path();
+        
+        let status = check_cluster();
+        assert_eq!(status, KubernetesStatus::Connected);
+
+        let ctx = current_context().unwrap();
+        assert_eq!(ctx, "minikube");
+
+        let nodes = check_nodes().unwrap();
+        assert_eq!(nodes, vec!["node1", "node2"]);
+    }
 }

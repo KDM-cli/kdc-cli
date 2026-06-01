@@ -969,3 +969,65 @@ fn render_short_list(values: &[String]) -> String {
 fn empty_state(title: &str, body: &str, suggestion: &str) -> String {
     format!("{title}\n\n{body}\n\nSuggestion:\n{suggestion}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::crossterm::event::KeyCode;
+
+    #[test]
+    fn test_render_all_phases() {
+        crate::utils::test_support::set_mock_path();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
+
+        // 1. First Launch
+        state.ui.phase = UiPhase::FirstLaunch;
+        let res = terminal.draw(|frame| {
+            render(frame, &state);
+        });
+        assert!(res.is_ok());
+
+        // 2. Scanning
+        state.ui.phase = UiPhase::Scanning;
+        let res = terminal.draw(|frame| {
+            render(frame, &state);
+        });
+        assert!(res.is_ok());
+
+        // 3. Ready (main screen)
+        state.ui.phase = UiPhase::Ready;
+        let res = terminal.draw(|frame| {
+            render(frame, &state);
+        });
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_handle_first_launch_key() {
+        crate::utils::test_support::set_mock_path();
+        let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
+        state.ui.first_launch_choice = 0;
+        let res = handle_first_launch_key(&mut state, KeyCode::Down);
+        assert!(res.is_ok());
+        assert_eq!(state.ui.first_launch_choice, 1);
+
+        let res = handle_first_launch_key(&mut state, KeyCode::Up);
+        assert!(res.is_ok());
+        assert_eq!(state.ui.first_launch_choice, 0);
+
+        let res = handle_first_launch_key(&mut state, KeyCode::Enter);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_cycle_theme() {
+        crate::utils::test_support::set_mock_path();
+        let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
+        let initial_theme = state.ui.active_theme;
+        cycle_theme(&mut state);
+        assert_ne!(state.ui.active_theme, initial_theme);
+    }
+}

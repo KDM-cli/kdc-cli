@@ -85,4 +85,16 @@ mod tests {
         };
         assert_eq!(line.message, "Server started on port 8080");
     }
+
+    #[test]
+    fn test_fetch_and_fetch_all() {
+        crate::utils::test_support::set_mock_path();
+        
+        let logs = fetch("container123", 10).unwrap();
+        assert_eq!(logs.len(), 3);
+        assert_eq!(logs[0].message, "line1");
+
+        let all_logs = fetch_all("container123").unwrap();
+        assert_eq!(all_logs.len(), 3);
+    }
 }

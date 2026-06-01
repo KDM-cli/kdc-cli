@@ -72,4 +72,19 @@ mod tests {
         assert!(request.service.is_none());
         assert_eq!(request.tail, Some(100));
     }
+
+    #[test]
+    fn test_fetch_compose_logs() {
+        crate::utils::test_support::set_mock_path();
+        let request = ComposeLogRequest {
+            follow: false,
+            service: Some("web".to_string()),
+            tail: Some(10),
+        };
+        let res = fetch(&request, Path::new("."));
+        assert!(res.is_ok());
+        let lines = res.unwrap();
+        assert!(lines.len() >= 2);
+        assert_eq!(lines[0], "compose log line 1");
+    }
 }

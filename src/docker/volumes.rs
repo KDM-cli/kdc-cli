@@ -61,4 +61,13 @@ mod tests {
         assert_eq!(volume.name, "my-data");
         assert_eq!(volume.driver, "local");
     }
+
+    #[test]
+    fn test_list() {
+        crate::utils::test_support::set_mock_path();
+        let volumes = list().unwrap();
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].name, "db-data");
+        assert_eq!(volumes[0].driver, "local");
+    }
 }

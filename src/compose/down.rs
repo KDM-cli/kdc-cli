@@ -56,4 +56,17 @@ mod tests {
         assert!(!request.remove_volumes);
         assert!(request.remove_orphans);
     }
+
+    #[test]
+    fn test_execute() {
+        crate::utils::test_support::set_mock_path();
+        let request = ComposeDownRequest {
+            remove_volumes: true,
+            remove_orphans: true,
+        };
+        let res = execute(&request, Path::new("."));
+        assert!(res.is_ok());
+        let output = res.unwrap();
+        assert!(output.contains("Stopping container"));
+    }
 }

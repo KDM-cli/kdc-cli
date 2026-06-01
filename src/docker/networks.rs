@@ -64,4 +64,13 @@ mod tests {
         assert_eq!(network.name, "bridge");
         assert_eq!(network.driver, "bridge");
     }
+
+    #[test]
+    fn test_list() {
+        crate::utils::test_support::set_mock_path();
+        let networks = list().unwrap();
+        assert_eq!(networks.len(), 1);
+        assert_eq!(networks[0].name, "app-network");
+        assert_eq!(networks[0].driver, "bridge");
+    }
 }

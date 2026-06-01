@@ -85,4 +85,20 @@ mod tests {
         };
         assert_eq!(request.full_tag(), "registry.io/myapp:v1.0.0");
     }
+
+    #[test]
+    fn test_execute_and_rebuild() {
+        crate::utils::test_support::set_mock_path();
+        let request = BuildRequest {
+            image: "myapp".to_string(),
+            tag: "latest".to_string(),
+        };
+        let res = execute(&request, Path::new(".")).unwrap();
+        assert!(res.success);
+        assert_eq!(res.image_tag, "myapp:latest");
+
+        let res_rebuild = rebuild(&request, Path::new(".")).unwrap();
+        assert!(res_rebuild.success);
+        assert_eq!(res_rebuild.image_tag, "myapp:latest");
+    }
 }

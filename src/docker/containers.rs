@@ -98,4 +98,20 @@ mod tests {
         assert_eq!(container.status, "Up 5 minutes");
         assert_eq!(container.ports, "0.0.0.0:80->80/tcp");
     }
+
+    #[test]
+    fn test_list_and_inspect() {
+        crate::utils::test_support::set_mock_path();
+        
+        let containers = list().unwrap();
+        assert_eq!(containers.len(), 1);
+        assert_eq!(containers[0].id, "container123");
+        assert_eq!(containers[0].name, "web-app");
+
+        let all_containers = list_all().unwrap();
+        assert_eq!(all_containers.len(), 1);
+
+        let details = inspect("container123").unwrap();
+        assert_eq!(details, "manifest-info-json"); // from our mock router
+    }
 }

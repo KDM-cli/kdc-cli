@@ -68,4 +68,19 @@ mod tests {
         assert!(request.services.is_empty());
         assert!(!request.build);
     }
+
+    #[test]
+    fn test_execute() {
+        crate::utils::test_support::set_mock_path();
+        let request = ComposeUpRequest {
+            detached: true,
+            services: vec!["db".to_string()],
+            build: true,
+        };
+        let res = execute(&request, Path::new("."));
+        assert!(res.is_ok());
+        let result = res.unwrap();
+        assert!(result.success);
+        assert!(result.output.contains("Starting container"));
+    }
 }

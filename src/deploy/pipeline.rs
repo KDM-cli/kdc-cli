@@ -552,4 +552,50 @@ mod pipeline_mock_tests {
         assert!(calls[0].1.contains(&"-n".to_string()));
         assert!(calls[0].1.contains(&"my-namespace".to_string()));
     }
+
+    #[test]
+    fn test_execute_pipeline_with_runner() {
+        crate::utils::test_support::set_mock_path();
+        
+        let temp = std::env::temp_dir().join(format!(
+            "kdc-pipeline-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(temp.join("k8s")).unwrap();
+
+        let project = ProjectContext {
+            name: "test-proj".to_string(),
+            root: temp.clone(),
+            stack: crate::domain::project::ProjectStack::Rust,
+            assets: vec![],
+        };
+        let caps = ProjectCapabilities {
+            docker: true,
+            kubernetes: true,
+            deployment: true,
+            ..Default::default()
+        };
+        let runtime = RuntimeCapabilities {
+            docker_running: true,
+            cluster_connected: true,
+            ..Default::default()
+        };
+
+        let plan = plan(&caps, &runtime);
+        assert!(plan.ready());
+
+        let runner = MockRunner {
+            calls: Mutex::new(vec![]),
+            success: true,
+        };
+
+        let res = execute_pipeline_with_runner(&plan, &project, &caps, "development", &runner).unwrap();
+        assert!(res.overall_success);
+        assert_eq!(res.results.len(), 5);
+
+        std::fs::remove_dir_all(temp).unwrap();
+    }
 }

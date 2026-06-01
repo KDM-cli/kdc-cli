@@ -49,4 +49,14 @@ mod tests {
         };
         assert_eq!(request.service, Some("web".to_string()));
     }
+
+    #[test]
+    fn test_execute() {
+        crate::utils::test_support::set_mock_path();
+        let request = ComposeRestartRequest {
+            service: Some("db".to_string()),
+        };
+        let res = execute(&request, Path::new("."));
+        assert!(res.is_ok());
+    }
 }

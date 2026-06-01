@@ -408,4 +408,17 @@ mod tests {
         assert_eq!(val["checks"][0]["ok"], true);
         assert_eq!(val["checks"][0]["suggestion"], serde_json::Value::Null);
     }
+
+    #[test]
+    fn test_run_and_run_full() {
+        crate::utils::test_support::set_mock_path();
+        
+        let report = super::run();
+        assert!(report.total_count() > 0);
+
+        let report_full = super::run_full(Some("docker.io"));
+        assert!(report_full.total_count() > 0);
+        let rendered = report_full.render();
+        assert!(rendered.contains("OK"));
+    }
 }

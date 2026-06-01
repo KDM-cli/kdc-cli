@@ -131,4 +131,16 @@ mod tests {
         assert_ne!(RegistryStatus::Connected, RegistryStatus::Disconnected);
         assert_ne!(RegistryStatus::Unknown, RegistryStatus::Connected);
     }
+
+    #[test]
+    fn test_check_registry() {
+        crate::utils::test_support::set_mock_path();
+        
+        let status_empty = check_registry("");
+        assert_eq!(status_empty, RegistryStatus::Unknown);
+
+        // Fallback to docker info since invalid-url will fail HTTP HEAD
+        let status_fallback = check_registry("invalid-url");
+        assert_eq!(status_fallback, RegistryStatus::Connected);
+    }
 }

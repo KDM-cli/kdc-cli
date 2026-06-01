@@ -223,4 +223,20 @@ mod tests {
         assert_eq!(state.phase, UiPhase::Ready);
         assert_eq!(state.scan_progress, 100);
     }
+
+    #[test]
+    fn test_execution_output() {
+        let mut state = UiState::new(false, ThemeName::Dark);
+        assert!(!state.has_execution_output());
+
+        state.show_execution_output("My Title".to_string(), vec!["line 1".to_string()]);
+        assert!(state.has_execution_output());
+        assert_eq!(state.execution_title, Some("My Title".to_string()));
+        assert_eq!(state.execution_output, Some(vec!["line 1".to_string()]));
+
+        state.clear_execution_output();
+        assert!(!state.has_execution_output());
+        assert!(state.execution_title.is_none());
+        assert!(state.execution_output.is_none());
+    }
 }

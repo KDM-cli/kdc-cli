@@ -32,8 +32,18 @@ mod tests {
 
     #[test]
     fn docker_status_variants() {
-        // Just verify the enum variants exist and can be compared.
         assert_ne!(DockerStatus::Running, DockerStatus::Unavailable);
         assert_ne!(DockerStatus::Unknown, DockerStatus::Running);
+    }
+
+    #[test]
+    fn test_check_daemon_and_version() {
+        crate::utils::test_support::set_mock_path();
+        
+        let status = check_daemon();
+        assert_eq!(status, DockerStatus::Running);
+
+        let version = check_version().unwrap();
+        assert!(version.contains("Docker version"));
     }
 }

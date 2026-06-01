@@ -205,4 +205,51 @@ mod tests {
         assert!(!result.success);
         assert!(result.message.contains("Unknown action"));
     }
+
+    #[test]
+    fn test_executor_actions() {
+        crate::utils::test_support::set_mock_path();
+        use crate::domain::project::ProjectStack;
+        use std::path::PathBuf;
+
+        let project = ProjectContext {
+            name: "test-app".to_string(),
+            root: PathBuf::from("."),
+            stack: ProjectStack::Rust,
+            assets: Vec::new(),
+        };
+        let executor = KdcExecutor::new(&project);
+
+        // Test settings open
+        let res = executor.execute("settings.open").unwrap();
+        assert!(res.success);
+
+        // Test project analysis
+        let res = executor.execute("project.analysis").unwrap();
+        assert!(res.success);
+
+        // Test compose.up
+        let res = executor.execute("compose.up").unwrap();
+        assert!(res.success);
+
+        // Test compose.down
+        let res = executor.execute("compose.down").unwrap();
+        assert!(res.success);
+
+        // Test compose.logs
+        let res = executor.execute("compose.logs").unwrap();
+        assert!(res.success);
+
+        // Test docker.build
+        let res = executor.execute("docker.build").unwrap();
+        assert!(res.success);
+
+        // Test docker.run
+        let res = executor.execute("docker.run").unwrap();
+        assert!(res.success);
+
+        // Test docker.logs (with mock container list first)
+        let res = executor.execute("docker.logs").unwrap();
+        assert!(res.success);
+    }
 }

@@ -138,4 +138,23 @@ mod tests {
         assert_eq!(request.env_vars.len(), 1);
         assert_eq!(request.name, Some("my-container".to_string()));
     }
+
+    #[test]
+    fn test_run_stop_restart() {
+        crate::utils::test_support::set_mock_path();
+        
+        let request = RunRequest {
+            image: "nginx:latest".to_string(),
+            name: Some("my-container".to_string()),
+            ports: vec!["80:80".to_string()],
+            env_vars: vec![("KEY".to_string(), "VAL".to_string())],
+            detached: true,
+        };
+        let res = execute(&request).unwrap();
+        assert!(res.success);
+        assert_eq!(res.container_id, "container123");
+
+        assert!(stop("container123").is_ok());
+        assert!(restart("container123").is_ok());
+    }
 }

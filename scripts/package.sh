@@ -78,6 +78,7 @@ mkdir -p "$RPM_BUILD_DIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 cat <<'EOF' > kdc.spec
 %global __strip /bin/true
 %global debug_package %{nil}
+%global __os_install_post %{nil}
 
 Name:           kdc
 Version:        %{version}

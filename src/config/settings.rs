@@ -7,6 +7,14 @@ use serde::{Deserialize, Serialize};
 pub struct Settings {
     pub theme: String,
     pub default_environment: String,
+    #[serde(default)]
+    pub registry: Option<String>,
+    #[serde(default = "default_namespace")]
+    pub default_namespace: String,
+}
+
+fn default_namespace() -> String {
+    "default".to_string()
 }
 
 impl Default for Settings {
@@ -14,6 +22,8 @@ impl Default for Settings {
         Self {
             theme: "dark".to_string(),
             default_environment: "development".to_string(),
+            registry: None,
+            default_namespace: default_namespace(),
         }
     }
 }
@@ -41,6 +51,12 @@ impl Settings {
         fs::write(path, content)
             .with_context(|| format!("Unable to write settings to {}", path.display()))
     }
+
+    /// Update the theme and persist the change.
+    pub fn set_theme(&mut self, theme: &str, path: &Path) -> Result<()> {
+        self.theme = theme.to_string();
+        self.save(path)
+    }
 }
 
 #[cfg(test)]
@@ -65,6 +81,8 @@ mod tests {
         let settings = Settings {
             theme: "nord".to_string(),
             default_environment: "staging".to_string(),
+            registry: Some("ghcr.io".to_string()),
+            default_namespace: "staging".to_string(),
         };
 
         settings.save(&path).unwrap();
@@ -72,5 +90,36 @@ mod tests {
 
         assert_eq!(settings, loaded);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn settings_backward_compatible() {
+        let path = std::env::temp_dir().join(format!(
+            "kdc-settings-compat-{}.yaml",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+
+        // Write an old-format config (without registry and default_namespace).
+        let old_content = "theme: dark\ndefault_environment: development\n";
+        fs::write(&path, old_content).unwrap();
+
+        let loaded = Settings::load_or_default(&path).unwrap();
+        assert_eq!(loaded.theme, "dark");
+        assert!(loaded.registry.is_none());
+        assert_eq!(loaded.default_namespace, "default");
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn default_settings_have_expected_values() {
+        let settings = Settings::default();
+        assert_eq!(settings.theme, "dark");
+        assert_eq!(settings.default_environment, "development");
+        assert!(settings.registry.is_none());
+        assert_eq!(settings.default_namespace, "default");
     }
 }

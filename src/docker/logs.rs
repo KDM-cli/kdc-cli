@@ -1,4 +1,67 @@
+use std::process::Command;
+
+use anyhow::{Context, Result};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DockerLogLine {
     pub message: String,
+}
+
+/// Fetch the last `tail` lines of logs from a Docker container.
+pub fn fetch(container_id: &str, tail: usize) -> Result<Vec<DockerLogLine>> {
+    let tail_str = tail.to_string();
+    let output = Command::new("docker")
+        .args(["logs", "--tail", &tail_str, container_id])
+        .output()
+        .context("Failed to execute docker logs")?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Docker sends some log output to stderr, so combine both streams.
+    let combined = format!("{stdout}{stderr}");
+    let lines = combined
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| DockerLogLine {
+            message: line.to_string(),
+        })
+        .collect();
+
+    Ok(lines)
+}
+
+/// Fetch all logs from a Docker container.
+pub fn fetch_all(container_id: &str) -> Result<Vec<DockerLogLine>> {
+    let output = Command::new("docker")
+        .args(["logs", container_id])
+        .output()
+        .context("Failed to execute docker logs")?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
+
+    let lines = combined
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| DockerLogLine {
+            message: line.to_string(),
+        })
+        .collect();
+
+    Ok(lines)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn docker_log_line_holds_message() {
+        let line = DockerLogLine {
+            message: "Server started on port 8080".to_string(),
+        };
+        assert_eq!(line.message, "Server started on port 8080");
+    }
 }

@@ -231,6 +231,24 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, palette: them
 }
 
 fn render_main(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
+    // If there is execution output, show it in the main area.
+    if let Some(lines) = &state.ui.execution_output {
+        let title = state
+            .ui
+            .execution_title
+            .as_deref()
+            .unwrap_or("Execution Output");
+        let content = lines.join("\n");
+        render_panel(
+            frame,
+            area,
+            &format!(" {title} "),
+            format!("{content}\n\nPress Esc or navigate to dismiss."),
+            palette,
+        );
+        return;
+    }
+
     match state.current_screen {
         Screen::Dashboard => render_dashboard(frame, area, state, palette),
         Screen::Docker => render_docker(frame, area, state, palette),
@@ -464,7 +482,190 @@ fn render_panel(
 }
 
 fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let area = centered_rect(56, 52, area);
+    // Dynamic centered rect with a minimum height to prevent squishing
+    let width = (area.width * 65 / 100).clamp(60, area.width);
+    let height = 25.clamp(20, area.height);
+    let x = (area.width - width) / 2;
+    let y = (area.height - height) / 2;
+    let welcome_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    frame.render_widget(Clear, welcome_area);
+
+    let outer_block = Block::default().borders(Borders::ALL).title(Span::styled(
+        " KDC - Welcome ",
+        Style::default()
+            .fg(palette.accent)
+            .add_modifier(Modifier::BOLD),
+    ));
+    frame.render_widget(outer_block.clone(), welcome_area);
+
+    let inner_area = outer_block.inner(welcome_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // ASCII art
+            Constraint::Length(4), // Subtitle, link, author
+            Constraint::Length(8), // Project card
+            Constraint::Min(5),    // Options
+        ])
+        .split(inner_area);
+
+    // 1. ASCII Art
+    let ascii_art = vec![
+        Line::from(Span::styled(
+            "  _  ______   ____ ",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " | |/ /  _ \\ / ___|",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " | ' /| | | | |    ",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " | . \\| |_| | |___ ",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " |_|\\_\\____/ \\____|",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+    ];
+    frame.render_widget(
+        Paragraph::new(ascii_art).alignment(Alignment::Center),
+        chunks[0],
+    );
+
+    // 2. Subtitle, Link, and Author
+    let subtitle_info = vec![
+        Line::from(Span::styled(
+            "Kubernetes & Docker Commander like a boss.",
+            Style::default().fg(palette.text),
+        )),
+        Line::from(Span::styled(
+            "https://github.com/utkarsh232005/kdc-cli",
+            Style::default().fg(palette.muted),
+        )),
+        Line::from(vec![
+            Span::raw("[with "),
+            Span::styled("♥", Style::default().fg(palette.danger)),
+            Span::raw(" by "),
+            Span::styled("@utkarsh232005", Style::default().fg(palette.success)),
+            Span::raw("]"),
+        ]),
+    ];
+    frame.render_widget(
+        Paragraph::new(subtitle_info).alignment(Alignment::Center),
+        chunks[1],
+    );
+
+    // 3. Project Details Card
+    let mut details = Vec::new();
+    details.push(Line::from(vec![
+        Span::styled("  Root: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            format!("{}", state.project.root.display()),
+            Style::default().fg(palette.text),
+        ),
+    ]));
+    details.push(Line::from(vec![
+        Span::styled("  Stack: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            format!("{}", state.project.stack),
+            Style::default().fg(palette.text),
+        ),
+    ]));
+    details.push(Line::from(vec![
+        Span::styled("  Dockerfile: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            if state.capabilities.docker {
+                "Found"
+            } else {
+                "Missing"
+            },
+            Style::default().fg(if state.capabilities.docker {
+                palette.success
+            } else {
+                palette.warning
+            }),
+        ),
+    ]));
+    details.push(Line::from(vec![
+        Span::styled("  Compose: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            if state.capabilities.compose {
+                "Found"
+            } else {
+                "Missing"
+            },
+            Style::default().fg(if state.capabilities.compose {
+                palette.success
+            } else {
+                palette.warning
+            }),
+        ),
+    ]));
+    details.push(Line::from(vec![
+        Span::styled("  Kubernetes: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            if state.capabilities.kubernetes {
+                "Found"
+            } else {
+                "Missing"
+            },
+            Style::default().fg(if state.capabilities.kubernetes {
+                palette.success
+            } else {
+                palette.warning
+            }),
+        ),
+    ]));
+    details.push(Line::from(vec![
+        Span::styled("  Helm Chart: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            if state.capabilities.helm {
+                "Found"
+            } else {
+                "Missing"
+            },
+            Style::default().fg(if state.capabilities.helm {
+                palette.success
+            } else {
+                palette.warning
+            }),
+        ),
+    ]));
+
+    frame.render_widget(
+        Paragraph::new(details)
+            .block(
+                Block::default()
+                    .title(" Current Directory Details ")
+                    .borders(Borders::ALL),
+            )
+            .style(Style::default().fg(palette.text)),
+        chunks[2],
+    );
+
+    // 4. Action/Choice List
     let choices = [
         FirstLaunchChoice::UseCurrentFolder,
         FirstLaunchChoice::BrowseFolder,
@@ -490,14 +691,9 @@ fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette:
         })
         .collect::<Vec<_>>();
 
-    frame.render_widget(Clear, area);
     frame.render_widget(
-        List::new(items).block(
-            Block::default()
-                .title(" KDC - Kubernetes Docker Commander ")
-                .borders(Borders::ALL),
-        ),
-        area,
+        List::new(items).block(Block::default().title(" Actions ").borders(Borders::ALL)),
+        chunks[3],
     );
 }
 
@@ -699,12 +895,22 @@ fn reload_project(state: &mut AppState, path: PathBuf) -> io::Result<()> {
 
 fn cycle_theme(state: &mut AppState) {
     state.ui.active_theme = state.ui.active_theme.next();
-    state.settings.theme = state
+    let theme_str = state
         .ui
         .active_theme
         .label()
         .to_lowercase()
         .replace(' ', "-");
+    state.settings.theme = theme_str;
+
+    // Persist the theme change to the config file.
+    let config_path = crate::config::paths::config_file();
+    if let Err(err) = state.settings.save(&config_path) {
+        state.ui.push_notification(Notification::warning(format!(
+            "Could not save theme: {err}"
+        )));
+    }
+
     state.ui.push_notification(Notification::info(format!(
         "Theme: {}",
         state.ui.active_theme.label()

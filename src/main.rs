@@ -39,8 +39,21 @@ enum Command {
     InitConfig,
     /// Print a dry-run deployment plan.
     DeployPlan,
+    /// Execute the deployment pipeline.
+    Deploy {
+        /// Target environment (development, staging, production).
+        #[arg(short, long, default_value = "development")]
+        environment: String,
+    },
     /// Check the local development environment.
-    Doctor,
+    Doctor {
+        /// Run the full set of checks including registry and OS hints.
+        #[arg(long)]
+        full: bool,
+        /// Export the doctor report as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -52,9 +65,28 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Doctor) => {
-            let report = doctor::environment_check::run();
-            println!("{}", report.render());
+        Some(Command::Doctor { full, json }) => {
+            let report = if full {
+                let settings =
+                    config::settings::Settings::load_or_default(&config::paths::config_file())?;
+                doctor::environment_check::run_full(settings.registry.as_deref())
+            } else {
+                doctor::environment_check::run()
+            };
+
+            if json {
+                println!("{}", report.export_json());
+                // Also save to the doctor report file.
+                let report_path = config::paths::doctor_report_file();
+                if let Some(parent) = report_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&report_path, report.export_json())?;
+                println!("Report saved to {}", report_path.display());
+            } else {
+                println!("{}", report.render());
+                println!("\n{}", report.summary_line());
+            }
         }
         Some(Command::InitConfig) => {
             let path = config::paths::config_file();
@@ -98,6 +130,52 @@ fn main() -> anyhow::Result<()> {
             let plan = deploy::pipeline::plan(&state.capabilities, &state.runtime);
             println!("{}", plan.render());
         }
+        Some(Command::Deploy { environment }) => {
+            let state = startup::initialize(cli.project)?;
+            let plan = deploy::pipeline::plan(&state.capabilities, &state.runtime);
+
+            if !plan.ready() {
+                println!("Deployment plan has blockers:");
+                for blocker in &plan.blockers {
+                    println!("  - {blocker}");
+                }
+                std::process::exit(1);
+            }
+
+            println!("Executing deployment pipeline...\n");
+            let execution =
+                deploy::pipeline::execute_pipeline(&plan, &state.project, &state.capabilities)?;
+            println!("{}", execution.render());
+
+            // Record the deployment in history.
+            let env = deploy::environments::from_string(&environment);
+            let history_path = config::paths::deploy_history_file();
+            let mut history = deploy::history::DeploymentHistory::load_or_default(&history_path)?;
+            history.record(deploy::history::DeploymentRecord {
+                timestamp: chrono_timestamp(),
+                environment: env.to_string(),
+                image_tag: format!(
+                    "{}:latest",
+                    state.project.name.to_lowercase().replace(' ', "-")
+                ),
+                success: execution.overall_success,
+                steps_completed: execution.results.iter().filter(|r| r.success).count(),
+                steps_total: execution.results.len(),
+                duration_secs: execution.total_duration_secs(),
+                message: if execution.overall_success {
+                    "All steps completed".to_string()
+                } else {
+                    execution
+                        .results
+                        .iter()
+                        .find(|r| !r.success)
+                        .map(|r| r.message.clone())
+                        .unwrap_or_else(|| "Unknown failure".to_string())
+                },
+            });
+            history.save(&history_path)?;
+            println!("\nDeployment recorded in {}", history_path.display());
+        }
         None => {
             let state = startup::initialize_with_options(
                 cli.project,
@@ -110,4 +188,15 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Generate an ISO 8601 timestamp string without pulling in the chrono crate.
+fn chrono_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs();
+    // Simple epoch-based timestamp.
+    format!("epoch:{secs}")
 }

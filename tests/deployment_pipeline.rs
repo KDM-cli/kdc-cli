@@ -1,0 +1,254 @@
+use kdc::deploy::{
+    environments::{from_string, resolve_namespace},
+    history::{DeploymentHistory, DeploymentRecord},
+    pipeline::{plan, DeploymentPlan, PipelineExecution, PipelineStep, PipelineStepResult},
+    rollback::RollbackRequest,
+};
+use kdc::project::{environment::Environment, ProjectCapabilities, RuntimeCapabilities};
+
+#[test]
+fn plan_ready_with_all_capabilities() {
+    let plan = plan(
+        &ProjectCapabilities {
+            docker: true,
+            kubernetes: true,
+            deployment: true,
+            ..ProjectCapabilities::default()
+        },
+        &RuntimeCapabilities {
+            docker_running: true,
+            cluster_connected: true,
+            ..RuntimeCapabilities::default()
+        },
+    );
+
+    assert!(plan.ready());
+    assert_eq!(plan.steps.len(), 5);
+}
+
+#[test]
+fn plan_blocked_without_docker() {
+    let plan = plan(
+        &ProjectCapabilities::default(),
+        &RuntimeCapabilities::default(),
+    );
+
+    assert!(!plan.ready());
+    assert!(plan.blockers.contains(&"Dockerfile is missing".to_string()));
+}
+
+#[test]
+fn plan_blocked_without_cluster() {
+    let plan = plan(
+        &ProjectCapabilities {
+            docker: true,
+            kubernetes: true,
+            ..ProjectCapabilities::default()
+        },
+        &RuntimeCapabilities {
+            docker_running: true,
+            cluster_connected: false,
+            ..RuntimeCapabilities::default()
+        },
+    );
+
+    assert!(!plan.ready());
+    assert!(plan
+        .blockers
+        .contains(&"Kubernetes cluster is not connected".to_string()));
+}
+
+#[test]
+fn pipeline_execution_render_shows_success() {
+    let execution = PipelineExecution {
+        results: vec![
+            PipelineStepResult {
+                step: PipelineStep::Build,
+                success: true,
+                message: "done".to_string(),
+                duration_secs: 1.5,
+            },
+            PipelineStepResult {
+                step: PipelineStep::DockerBuild,
+                success: true,
+                message: "built".to_string(),
+                duration_secs: 5.0,
+            },
+        ],
+        overall_success: true,
+    };
+
+    let rendered = execution.render();
+    assert!(rendered.contains("SUCCESS"));
+    assert!(rendered.contains("✓ Build Application"));
+    assert!(rendered.contains("✓ Docker Build"));
+}
+
+#[test]
+fn pipeline_execution_render_shows_failure() {
+    let execution = PipelineExecution {
+        results: vec![PipelineStepResult {
+            step: PipelineStep::DockerBuild,
+            success: false,
+            message: "no Dockerfile".to_string(),
+            duration_secs: 0.1,
+        }],
+        overall_success: false,
+    };
+
+    let rendered = execution.render();
+    assert!(rendered.contains("FAILED"));
+    assert!(rendered.contains("✗ Docker Build"));
+}
+
+#[test]
+fn pipeline_execution_total_duration() {
+    let execution = PipelineExecution {
+        results: vec![
+            PipelineStepResult {
+                step: PipelineStep::Build,
+                success: true,
+                message: "ok".to_string(),
+                duration_secs: 2.0,
+            },
+            PipelineStepResult {
+                step: PipelineStep::DockerBuild,
+                success: true,
+                message: "ok".to_string(),
+                duration_secs: 3.5,
+            },
+        ],
+        overall_success: true,
+    };
+
+    assert!((execution.total_duration_secs() - 5.5).abs() < f64::EPSILON);
+}
+
+#[test]
+fn deployment_plan_render_includes_steps_and_blockers() {
+    let plan = DeploymentPlan {
+        steps: vec![PipelineStep::Build, PipelineStep::DockerBuild],
+        blockers: vec!["Docker daemon is not running".to_string()],
+    };
+
+    let rendered = plan.render();
+    assert!(rendered.contains("Build Application"));
+    assert!(rendered.contains("Docker Build"));
+    assert!(rendered.contains("Docker daemon is not running"));
+    assert!(rendered.contains("Ready: false"));
+}
+
+#[test]
+fn environment_resolves_to_namespace() {
+    assert_eq!(resolve_namespace(&Environment::Development), "default");
+    assert_eq!(resolve_namespace(&Environment::Staging), "staging");
+    assert_eq!(resolve_namespace(&Environment::Production), "production");
+}
+
+#[test]
+fn environment_from_string_parses() {
+    assert_eq!(from_string("staging"), Environment::Staging);
+    assert_eq!(from_string("stg"), Environment::Staging);
+    assert_eq!(from_string("prod"), Environment::Production);
+    assert_eq!(from_string("production"), Environment::Production);
+    assert_eq!(from_string("development"), Environment::Development);
+    assert_eq!(from_string("unknown"), Environment::Development);
+}
+
+#[test]
+fn deployment_history_records_and_truncates() {
+    let mut history = DeploymentHistory::default();
+
+    for i in 0..60 {
+        history.record(DeploymentRecord {
+            timestamp: format!("ts-{i}"),
+            environment: "development".to_string(),
+            image_tag: "app:latest".to_string(),
+            success: i % 2 == 0,
+            steps_completed: 5,
+            steps_total: 5,
+            duration_secs: 10.0,
+            message: "ok".to_string(),
+        });
+    }
+
+    assert_eq!(history.total_deployments(), 50);
+}
+
+#[test]
+fn deployment_history_last_success() {
+    let mut history = DeploymentHistory::default();
+    history.record(DeploymentRecord {
+        timestamp: "ts-1".to_string(),
+        environment: "development".to_string(),
+        image_tag: "app:latest".to_string(),
+        success: false,
+        steps_completed: 3,
+        steps_total: 5,
+        duration_secs: 5.0,
+        message: "failed".to_string(),
+    });
+    history.record(DeploymentRecord {
+        timestamp: "ts-2".to_string(),
+        environment: "staging".to_string(),
+        image_tag: "app:v1.0".to_string(),
+        success: true,
+        steps_completed: 5,
+        steps_total: 5,
+        duration_secs: 12.0,
+        message: "ok".to_string(),
+    });
+
+    let last = history.last_success().unwrap();
+    assert!(last.success);
+    assert_eq!(last.environment, "staging");
+}
+
+#[test]
+fn deployment_history_yaml_round_trip() {
+    let path = std::env::temp_dir().join(format!(
+        "kdc-deploy-hist-test-{}.yaml",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+
+    let mut history = DeploymentHistory::default();
+    history.record(DeploymentRecord {
+        timestamp: "ts".to_string(),
+        environment: "development".to_string(),
+        image_tag: "app:latest".to_string(),
+        success: true,
+        steps_completed: 5,
+        steps_total: 5,
+        duration_secs: 10.0,
+        message: "ok".to_string(),
+    });
+    history.save(&path).unwrap();
+
+    let loaded = DeploymentHistory::load_or_default(&path).unwrap();
+    assert_eq!(history.total_deployments(), loaded.total_deployments());
+
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn rollback_request_with_revision() {
+    let request = RollbackRequest {
+        deployment_name: Some("my-app".to_string()),
+        target_revision: Some("3".to_string()),
+    };
+    assert_eq!(request.deployment_name, Some("my-app".to_string()));
+    assert_eq!(request.target_revision, Some("3".to_string()));
+}
+
+#[test]
+fn rollback_request_defaults() {
+    let request = RollbackRequest {
+        deployment_name: None,
+        target_revision: None,
+    };
+    assert!(request.deployment_name.is_none());
+    assert!(request.target_revision.is_none());
+}

@@ -1,0 +1,62 @@
+name: Update README Version
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to set in README (e.g. 0.2.0, without the v prefix)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    name: Bump version in README
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: get_version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          # Use manual input if triggered via workflow_dispatch, otherwise strip 'v' from the release tag
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${TAG#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Replace version placeholder in README
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          # Replace bare <VERSION> placeholders (used in URLs and text)
+          sed -i "s/<VERSION>/${VERSION}/g" README.md
+        shell: bash
+
+      - name: Commit and push updated README
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if git diff-index --quiet HEAD; then
+            echo "README already up to date, nothing to commit."
+          else
+            git commit -m "docs: bump install version to v${VERSION} in README"
+            git push origin HEAD:main
+          fi
+        shell: bash

@@ -58,6 +58,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # master
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Cache Cargo registry and target

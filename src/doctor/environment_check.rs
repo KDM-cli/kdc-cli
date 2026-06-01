@@ -206,64 +206,72 @@ fn kubernetes_context_check() -> DoctorCheck {
     }
 }
 
+fn is_docker_running() -> bool {
+    Command::new("docker")
+        .args(["info"])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+fn inspect_manifest(image_target: &str) -> Result<String, String> {
+    match Command::new("docker")
+        .args(["manifest", "inspect", image_target])
+        .output()
+    {
+        Ok(out) => {
+            if out.status.success() {
+                let detail = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let detail_snippet = if detail.len() > 100 {
+                    format!("{}...", &detail[..100])
+                } else {
+                    detail
+                };
+                Ok(detail_snippet)
+            } else {
+                Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+            }
+        }
+        Err(err) => Err(format!("Failed to run docker manifest command: {err}")),
+    }
+}
+
 fn registry_connectivity_check(registry_url: &str) -> DoctorCheck {
     // Try a lightweight check by running `docker manifest inspect` against a
     // known public image on the registry. This validates connectivity without
     // needing credentials for the probe itself.
-    match Command::new("docker").args(["info"]).output() {
-        Ok(output) if output.status.success() => {
-            let image_target = if registry_url == "docker.io" {
-                "docker.io/library/alpine:latest".to_string()
-            } else {
-                format!("{}/alpine:latest", registry_url.trim_end_matches('/'))
-            };
-
-            match Command::new("docker")
-                .args(["manifest", "inspect", &image_target])
-                .output()
-            {
-                Ok(out) => {
-                    if out.status.success() {
-                        let detail = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        let detail_snippet = if detail.len() > 100 {
-                            format!("{}...", &detail[..100])
-                        } else {
-                            detail
-                        };
-                        DoctorCheck {
-                            name: "Registry Connectivity".to_string(),
-                            ok: true,
-                            detail: format!(
-                                "Successfully inspected {}: {}",
-                                image_target, detail_snippet
-                            ),
-                            suggestion: None,
-                        }
-                    } else {
-                        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                        DoctorCheck {
-                            name: "Registry Connectivity".to_string(),
-                            ok: false,
-                            detail: format!("Failed to inspect {}: {}", image_target, err),
-                            suggestion: Some(
-                                "Run 'docker login' or check credentials/connectivity".to_string(),
-                            ),
-                        }
-                    }
-                }
-                Err(err) => DoctorCheck {
-                    name: "Registry Connectivity".to_string(),
-                    ok: false,
-                    detail: format!("Failed to run docker manifest command: {}", err),
-                    suggestion: Some("Ensure Docker is installed and running".to_string()),
-                },
-            }
-        }
-        _ => DoctorCheck {
+    if !is_docker_running() {
+        return DoctorCheck {
             name: "Registry Connectivity".to_string(),
             ok: false,
             detail: "Docker daemon is not available".to_string(),
             suggestion: Some("Start Docker Desktop or the Docker service first".to_string()),
+        };
+    }
+
+    let image_target = if registry_url == "docker.io" {
+        "docker.io/library/alpine:latest".to_string()
+    } else {
+        format!("{}/alpine:latest", registry_url.trim_end_matches('/'))
+    };
+
+    match inspect_manifest(&image_target) {
+        Ok(detail_snippet) => DoctorCheck {
+            name: "Registry Connectivity".to_string(),
+            ok: true,
+            detail: format!(
+                "Successfully inspected {}: {}",
+                image_target, detail_snippet
+            ),
+            suggestion: None,
+        },
+        Err(err) => DoctorCheck {
+            name: "Registry Connectivity".to_string(),
+            ok: false,
+            detail: format!("Failed to inspect {}: {}", image_target, err),
+            suggestion: Some(
+                "Run 'docker login' or check credentials/connectivity".to_string(),
+            ),
         },
     }
 }

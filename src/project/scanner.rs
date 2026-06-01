@@ -15,7 +15,16 @@ pub fn scan(root: &Path) -> Result<Vec<ProjectAsset>> {
         .into_iter()
         .filter_entry(|entry| !is_ignored(entry.path()))
     {
-        let entry = entry?;
+        // Skip entries that fail with permission errors instead of failing the entire scan
+        let entry = match entry {
+            Ok(e) => e,
+            Err(err) => {
+                // Log the error but continue scanning
+                tracing::debug!("Skipping inaccessible path: {}", err);
+                continue;
+            }
+        };
+
         if !entry.file_type().is_file() {
             continue;
         }

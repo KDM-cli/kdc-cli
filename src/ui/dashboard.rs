@@ -975,9 +975,13 @@ mod tests {
     use super::*;
     use ratatui::crossterm::event::KeyCode;
     use ratatui::{backend::TestBackend, Terminal};
+    use std::sync::Mutex;
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_render_all_phases() {
+        let _guard = TEST_MUTEX.lock().unwrap();
         crate::utils::test_support::set_mock_path();
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -1007,6 +1011,7 @@ mod tests {
 
     #[test]
     fn test_handle_first_launch_key() {
+        let _guard = TEST_MUTEX.lock().unwrap();
         crate::utils::test_support::set_mock_path();
         let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
         state.ui.first_launch_choice = 0;
@@ -1024,6 +1029,7 @@ mod tests {
 
     #[test]
     fn test_cycle_theme() {
+        let _guard = TEST_MUTEX.lock().unwrap();
         crate::utils::test_support::set_mock_path();
         let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
         let initial_theme = state.ui.active_theme;

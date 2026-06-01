@@ -231,6 +231,24 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, palette: them
 }
 
 fn render_main(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
+    // If there is execution output, show it in the main area.
+    if let Some(lines) = &state.ui.execution_output {
+        let title = state
+            .ui
+            .execution_title
+            .as_deref()
+            .unwrap_or("Execution Output");
+        let content = lines.join("\n");
+        render_panel(
+            frame,
+            area,
+            &format!(" {title} "),
+            format!("{content}\n\nPress Esc or navigate to dismiss."),
+            palette,
+        );
+        return;
+    }
+
     match state.current_screen {
         Screen::Dashboard => render_dashboard(frame, area, state, palette),
         Screen::Docker => render_docker(frame, area, state, palette),
@@ -463,8 +481,191 @@ fn render_panel(
     );
 }
 
+fn welcome_rect(area: Rect) -> Rect {
+    let width_u32 = (area.width as u32 * 65 / 100)
+        .max(60)
+        .min(area.width as u32);
+    let height_u32 = 25u32.min(area.height as u32).max(20);
+
+    let width = width_u32 as u16;
+    let height = height_u32 as u16;
+    let x = area.width.saturating_sub(width) / 2;
+    let y = area.height.saturating_sub(height) / 2;
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+fn render_outer_block(
+    frame: &mut Frame,
+    welcome_area: Rect,
+    palette: theme::Palette,
+) -> Block<'static> {
+    let outer_block = Block::default().borders(Borders::ALL).title(Span::styled(
+        " KDC - Welcome ",
+        Style::default()
+            .fg(palette.accent)
+            .add_modifier(Modifier::BOLD),
+    ));
+    frame.render_widget(Clear, welcome_area);
+    frame.render_widget(outer_block.clone(), welcome_area);
+    outer_block
+}
+
+fn render_ascii_banner(frame: &mut Frame, chunk: Rect, palette: theme::Palette) {
+    let ascii_art = vec![
+        Line::from(Span::styled(
+            "  _  ______   ____ ",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " | |/ /  _ \\ / ___|",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " | ' /| | | | |    ",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " | . \\| |_| | |___ ",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " |_|\\_\\____/ \\____|",
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+    ];
+    frame.render_widget(
+        Paragraph::new(ascii_art).alignment(Alignment::Center),
+        chunk,
+    );
+}
+
+fn render_subtitle(frame: &mut Frame, chunk: Rect, palette: theme::Palette) {
+    let subtitle_info = vec![
+        Line::from(Span::styled(
+            "Kubernetes & Docker Commander like a boss.",
+            Style::default().fg(palette.text),
+        )),
+        Line::from(Span::styled(
+            "https://github.com/utkarsh232005/kdc-cli",
+            Style::default().fg(palette.muted),
+        )),
+        Line::from(vec![
+            Span::raw("[with "),
+            Span::styled("♥", Style::default().fg(palette.danger)),
+            Span::raw(" by "),
+            Span::styled("@utkarsh232005", Style::default().fg(palette.success)),
+            Span::raw("]"),
+        ]),
+    ];
+    frame.render_widget(
+        Paragraph::new(subtitle_info).alignment(Alignment::Center),
+        chunk,
+    );
+}
+
+fn capability_line(label: &str, present: bool, palette: theme::Palette) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("  {}: ", label), Style::default().fg(palette.muted)),
+        Span::styled(
+            if present { "Found" } else { "Missing" },
+            Style::default().fg(if present {
+                palette.success
+            } else {
+                palette.warning
+            }),
+        ),
+    ])
+}
+
+fn render_capabilities_card(
+    frame: &mut Frame,
+    chunk: Rect,
+    state: &AppState,
+    palette: theme::Palette,
+) {
+    let mut details = Vec::new();
+    details.push(Line::from(vec![
+        Span::styled("  Root: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            format!("{}", state.project.root.display()),
+            Style::default().fg(palette.text),
+        ),
+    ]));
+    details.push(Line::from(vec![
+        Span::styled("  Stack: ", Style::default().fg(palette.muted)),
+        Span::styled(
+            format!("{}", state.project.stack),
+            Style::default().fg(palette.text),
+        ),
+    ]));
+    details.push(capability_line(
+        "Dockerfile",
+        state.capabilities.docker,
+        palette,
+    ));
+    details.push(capability_line(
+        "Compose",
+        state.capabilities.compose,
+        palette,
+    ));
+    details.push(capability_line(
+        "Kubernetes",
+        state.capabilities.kubernetes,
+        palette,
+    ));
+    details.push(capability_line(
+        "Helm Chart",
+        state.capabilities.helm,
+        palette,
+    ));
+
+    frame.render_widget(
+        Paragraph::new(details)
+            .block(
+                Block::default()
+                    .title(" Current Directory Details ")
+                    .borders(Borders::ALL),
+            )
+            .style(Style::default().fg(palette.text)),
+        chunk,
+    );
+}
+
 fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let area = centered_rect(56, 52, area);
+    let welcome_area = welcome_rect(area);
+    let outer_block = render_outer_block(frame, welcome_area, palette);
+    let inner_area = outer_block.inner(welcome_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // ASCII art
+            Constraint::Length(4), // Subtitle, link, author
+            Constraint::Length(8), // Project card
+            Constraint::Min(5),    // Options
+        ])
+        .split(inner_area);
+
+    render_ascii_banner(frame, chunks[0], palette);
+    render_subtitle(frame, chunks[1], palette);
+    render_capabilities_card(frame, chunks[2], state, palette);
+
+    // 4. Action/Choice List
     let choices = [
         FirstLaunchChoice::UseCurrentFolder,
         FirstLaunchChoice::BrowseFolder,
@@ -490,14 +691,9 @@ fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette:
         })
         .collect::<Vec<_>>();
 
-    frame.render_widget(Clear, area);
     frame.render_widget(
-        List::new(items).block(
-            Block::default()
-                .title(" KDC - Kubernetes Docker Commander ")
-                .borders(Borders::ALL),
-        ),
-        area,
+        List::new(items).block(Block::default().title(" Actions ").borders(Borders::ALL)),
+        chunks[3],
     );
 }
 
@@ -699,12 +895,22 @@ fn reload_project(state: &mut AppState, path: PathBuf) -> io::Result<()> {
 
 fn cycle_theme(state: &mut AppState) {
     state.ui.active_theme = state.ui.active_theme.next();
-    state.settings.theme = state
+    let theme_str = state
         .ui
         .active_theme
         .label()
         .to_lowercase()
         .replace(' ', "-");
+    state.settings.theme = theme_str;
+
+    // Persist the theme change to the config file.
+    let config_path = crate::config::paths::config_file();
+    if let Err(err) = state.settings.save(&config_path) {
+        state.ui.push_notification(Notification::warning(format!(
+            "Could not save theme: {err}"
+        )));
+    }
+
     state.ui.push_notification(Notification::info(format!(
         "Theme: {}",
         state.ui.active_theme.label()
@@ -762,4 +968,66 @@ fn render_short_list(values: &[String]) -> String {
 
 fn empty_state(title: &str, body: &str, suggestion: &str) -> String {
     format!("{title}\n\n{body}\n\nSuggestion:\n{suggestion}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::crossterm::event::KeyCode;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn test_render_all_phases() {
+        crate::utils::test_support::set_mock_path();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
+
+        // 1. First Launch
+        state.ui.phase = UiPhase::FirstLaunch;
+        let res = terminal.draw(|frame| {
+            render(frame, &state);
+        });
+        assert!(res.is_ok());
+
+        // 2. Scanning
+        state.ui.phase = UiPhase::Scanning;
+        let res = terminal.draw(|frame| {
+            render(frame, &state);
+        });
+        assert!(res.is_ok());
+
+        // 3. Ready (main screen)
+        state.ui.phase = UiPhase::Ready;
+        let res = terminal.draw(|frame| {
+            render(frame, &state);
+        });
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_handle_first_launch_key() {
+        crate::utils::test_support::set_mock_path();
+        let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
+        state.ui.first_launch_choice = 0;
+        let res = handle_first_launch_key(&mut state, KeyCode::Down);
+        assert!(res.is_ok());
+        assert_eq!(state.ui.first_launch_choice, 1);
+
+        let res = handle_first_launch_key(&mut state, KeyCode::Up);
+        assert!(res.is_ok());
+        assert_eq!(state.ui.first_launch_choice, 0);
+
+        let res = handle_first_launch_key(&mut state, KeyCode::Enter);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_cycle_theme() {
+        crate::utils::test_support::set_mock_path();
+        let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
+        let initial_theme = state.ui.active_theme;
+        cycle_theme(&mut state);
+        assert_ne!(state.ui.active_theme, initial_theme);
+    }
 }

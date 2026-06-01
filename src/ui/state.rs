@@ -19,8 +19,8 @@ pub enum FirstLaunchChoice {
 impl FirstLaunchChoice {
     pub fn label(self) -> &'static str {
         match self {
-            Self::UseCurrentFolder => "Use Current Folder",
-            Self::BrowseFolder => "Browse Folder",
+            Self::UseCurrentFolder => "Initialize KDC in current directory",
+            Self::BrowseFolder => "Select another directory",
             Self::Exit => "Exit",
         }
     }
@@ -109,6 +109,8 @@ pub struct UiState {
     pub notifications: Vec<Notification>,
     pub active_theme: ThemeName,
     pub picked_folder: Option<PathBuf>,
+    pub execution_output: Option<Vec<String>>,
+    pub execution_title: Option<String>,
 }
 
 impl UiState {
@@ -125,6 +127,8 @@ impl UiState {
             notifications: Vec::new(),
             active_theme,
             picked_folder: None,
+            execution_output: None,
+            execution_title: None,
         }
     }
 
@@ -170,6 +174,23 @@ impl UiState {
     pub fn tick_notifications(&mut self) {
         self.notifications.retain_mut(Notification::tick);
     }
+
+    /// Show execution output from a command in the main area.
+    pub fn show_execution_output(&mut self, title: String, lines: Vec<String>) {
+        self.execution_title = Some(title);
+        self.execution_output = Some(lines);
+    }
+
+    /// Clear the execution output panel.
+    pub fn clear_execution_output(&mut self) {
+        self.execution_title = None;
+        self.execution_output = None;
+    }
+
+    /// Whether there is execution output to display.
+    pub fn has_execution_output(&self) -> bool {
+        self.execution_output.is_some()
+    }
 }
 
 #[cfg(test)]
@@ -201,5 +222,21 @@ mod tests {
 
         assert_eq!(state.phase, UiPhase::Ready);
         assert_eq!(state.scan_progress, 100);
+    }
+
+    #[test]
+    fn test_execution_output() {
+        let mut state = UiState::new(false, ThemeName::Dark);
+        assert!(!state.has_execution_output());
+
+        state.show_execution_output("My Title".to_string(), vec!["line 1".to_string()]);
+        assert!(state.has_execution_output());
+        assert_eq!(state.execution_title, Some("My Title".to_string()));
+        assert_eq!(state.execution_output, Some(vec!["line 1".to_string()]));
+
+        state.clear_execution_output();
+        assert!(!state.has_execution_output());
+        assert!(state.execution_title.is_none());
+        assert!(state.execution_output.is_none());
     }
 }

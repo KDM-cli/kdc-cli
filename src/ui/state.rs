@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::ui::theme::ThemeName;
+use crate::{commands::palette::CommandAction, domain::screen::Screen, ui::theme::ThemeName};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiPhase {
@@ -24,6 +24,12 @@ impl FirstLaunchChoice {
             Self::Exit => "Exit",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusPane {
+    Sidebar,
+    Main,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +117,8 @@ pub struct UiState {
     pub picked_folder: Option<PathBuf>,
     pub execution_output: Option<Vec<String>>,
     pub execution_title: Option<String>,
+    pub focus: FocusPane,
+    pub selected_action: usize,
 }
 
 impl UiState {
@@ -129,6 +137,8 @@ impl UiState {
             picked_folder: None,
             execution_output: None,
             execution_title: None,
+            focus: FocusPane::Sidebar,
+            selected_action: 0,
         }
     }
 
@@ -190,6 +200,49 @@ impl UiState {
     /// Whether there is execution output to display.
     pub fn has_execution_output(&self) -> bool {
         self.execution_output.is_some()
+    }
+
+    /// Toggle focus between sidebar and main panel.
+    pub fn toggle_focus(&mut self) {
+        self.focus = match self.focus {
+            FocusPane::Sidebar => FocusPane::Main,
+            FocusPane::Main => FocusPane::Sidebar,
+        };
+    }
+
+    /// Move action selection down, wrapping around.
+    pub fn move_action_next(&mut self, total: usize) {
+        if total > 0 {
+            self.selected_action = (self.selected_action + 1) % total;
+        }
+    }
+
+    /// Move action selection up, wrapping around.
+    pub fn move_action_previous(&mut self, total: usize) {
+        if total > 0 {
+            self.selected_action = if self.selected_action == 0 {
+                total - 1
+            } else {
+                self.selected_action - 1
+            };
+        }
+    }
+
+    /// Reset action selection when changing screens.
+    pub fn reset_action_selection(&mut self) {
+        self.selected_action = 0;
+    }
+
+    /// Get the list of actions relevant to the given screen.
+    pub fn screen_actions<'a>(
+        &self,
+        actions: &'a [CommandAction],
+        screen: Screen,
+    ) -> Vec<&'a CommandAction> {
+        actions
+            .iter()
+            .filter(|a| a.screen == screen)
+            .collect()
     }
 }
 

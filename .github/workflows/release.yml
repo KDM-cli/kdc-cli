@@ -81,7 +81,7 @@ jobs:
         shell: bash
 
       - name: Upload Binary Artifact
-        uses: actions/upload-artifact@0b2256b8c012f0878cc391196ead6427b322a30d # v4.3.3
+        uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8 # v4.3.3
         with:
           name: kdc-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/${{ matrix.bin_name }}
@@ -159,7 +159,7 @@ jobs:
           generate_release_notes: true
 
       - name: Upload packaging artifacts
-        uses: actions/upload-artifact@0b2256b8c012f0878cc391196ead6427b322a30d # v4.3.3
+        uses: actions/upload-artifact@3cea5372237819ed00197afe530f5a7ea3e805c8 # v4.3.3
         with:
           name: release-dist
           path: dist/

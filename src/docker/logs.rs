@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_fetch_and_fetch_all() {
         crate::utils::test_support::set_mock_path();
-        
+
         let logs = fetch("container123", 10).unwrap();
         assert_eq!(logs.len(), 3);
         assert_eq!(logs[0].message, "line1");

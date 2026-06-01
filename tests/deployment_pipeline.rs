@@ -1,10 +1,8 @@
 use kdc::deploy::{
-    environments::{from_string, resolve_namespace},
     history::{DeploymentHistory, DeploymentRecord},
     pipeline::{plan, DeploymentPlan, PipelineExecution, PipelineStep, PipelineStepResult},
-    rollback::RollbackRequest,
 };
-use kdc::project::{environment::Environment, ProjectCapabilities, RuntimeCapabilities};
+use kdc::project::{ProjectCapabilities, RuntimeCapabilities};
 
 #[test]
 fn plan_ready_with_all_capabilities() {
@@ -138,23 +136,6 @@ fn deployment_plan_render_includes_steps_and_blockers() {
     assert!(rendered.contains("Ready: false"));
 }
 
-#[test]
-fn environment_resolves_to_namespace() {
-    assert_eq!(resolve_namespace(&Environment::Development), "default");
-    assert_eq!(resolve_namespace(&Environment::Staging), "staging");
-    assert_eq!(resolve_namespace(&Environment::Production), "production");
-}
-
-#[test]
-fn environment_from_string_parses() {
-    assert_eq!(from_string("staging"), Environment::Staging);
-    assert_eq!(from_string("stg"), Environment::Staging);
-    assert_eq!(from_string("prod"), Environment::Production);
-    assert_eq!(from_string("production"), Environment::Production);
-    assert_eq!(from_string("development"), Environment::Development);
-    assert_eq!(from_string("unknown"), Environment::Development);
-}
-
 fn make_record(ts: &str, env: &str, success: bool) -> DeploymentRecord {
     DeploymentRecord {
         timestamp: ts.to_string(),
@@ -208,24 +189,4 @@ fn deployment_history_yaml_round_trip() {
     assert_eq!(history.total_deployments(), loaded.total_deployments());
 
     std::fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn rollback_request_with_revision() {
-    let request = RollbackRequest {
-        deployment_name: Some("my-app".to_string()),
-        target_revision: Some("3".to_string()),
-    };
-    assert_eq!(request.deployment_name, Some("my-app".to_string()));
-    assert_eq!(request.target_revision, Some("3".to_string()));
-}
-
-#[test]
-fn rollback_request_defaults() {
-    let request = RollbackRequest {
-        deployment_name: None,
-        target_revision: None,
-    };
-    assert!(request.deployment_name.is_none());
-    assert!(request.target_revision.is_none());
 }

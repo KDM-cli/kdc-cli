@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn test_list_and_inspect() {
         crate::utils::test_support::set_mock_path();
-        
+
         let containers = list().unwrap();
         assert_eq!(containers.len(), 1);
         assert_eq!(containers[0].id, "container123");

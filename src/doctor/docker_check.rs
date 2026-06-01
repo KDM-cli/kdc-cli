@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn test_check_daemon_and_version() {
         crate::utils::test_support::set_mock_path();
-        
+
         let status = check_daemon();
         assert_eq!(status, DockerStatus::Running);
 

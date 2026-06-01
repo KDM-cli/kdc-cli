@@ -973,8 +973,8 @@ fn empty_state(title: &str, body: &str, suggestion: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
     use ratatui::crossterm::event::KeyCode;
+    use ratatui::{backend::TestBackend, Terminal};
 
     #[test]
     fn test_render_all_phases() {

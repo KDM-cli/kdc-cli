@@ -556,7 +556,7 @@ mod pipeline_mock_tests {
     #[test]
     fn test_execute_pipeline_with_runner() {
         crate::utils::test_support::set_mock_path();
-        
+
         let temp = std::env::temp_dir().join(format!(
             "kdc-pipeline-test-{}",
             std::time::SystemTime::now()
@@ -592,7 +592,8 @@ mod pipeline_mock_tests {
             success: true,
         };
 
-        let res = execute_pipeline_with_runner(&plan, &project, &caps, "development", &runner).unwrap();
+        let res =
+            execute_pipeline_with_runner(&plan, &project, &caps, "development", &runner).unwrap();
         assert!(res.overall_success);
         assert_eq!(res.results.len(), 5);
 

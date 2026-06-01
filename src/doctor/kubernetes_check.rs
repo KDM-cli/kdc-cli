@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn test_check_cluster_and_nodes() {
         crate::utils::test_support::set_mock_path();
-        
+
         let status = check_cluster();
         assert_eq!(status, KubernetesStatus::Connected);
 

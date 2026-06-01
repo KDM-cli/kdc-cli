@@ -51,11 +51,7 @@ fn run_command_with_timeout(
 }
 
 /// Check if a container registry is reachable by verifying Docker connectivity.
-pub fn check_registry(registry: &str) -> RegistryStatus {
-    if registry.is_empty() {
-        return RegistryStatus::Unknown;
-    }
-
+fn build_v2_url(registry: &str) -> String {
     let domain = registry
         .trim_start_matches("https://")
         .trim_start_matches("http://");
@@ -66,42 +62,54 @@ pub fn check_registry(registry: &str) -> RegistryStatus {
         domain
     };
 
-    let url = format!("https://{}/v2/", target_domain);
+    format!("https://{}/v2/", target_domain)
+}
 
-    match ureq::head(&url)
+fn probe_registry_endpoint(url: &str) -> Option<RegistryStatus> {
+    match ureq::head(url)
         .timeout(std::time::Duration::from_secs(3))
         .call()
     {
         Ok(resp) => {
             let code = resp.status();
             if code == 200 || code == 401 {
-                RegistryStatus::Connected
+                Some(RegistryStatus::Connected)
             } else {
-                RegistryStatus::Disconnected
+                Some(RegistryStatus::Disconnected)
             }
         }
         Err(ureq::Error::Status(code, _)) => {
             if code == 401 {
-                RegistryStatus::Connected
+                Some(RegistryStatus::Connected)
             } else {
-                RegistryStatus::Disconnected
+                Some(RegistryStatus::Disconnected)
             }
         }
-        Err(_) => {
-            let has_docker = match run_command_with_timeout(
-                "docker",
-                &["info"],
-                std::time::Duration::from_secs(2),
-            ) {
-                Ok(output) => output.status.success(),
-                Err(_) => false,
-            };
-            if has_docker {
-                RegistryStatus::Connected
-            } else {
-                RegistryStatus::Disconnected
-            }
-        }
+        Err(_) => None,
+    }
+}
+
+fn check_docker_fallback() -> bool {
+    match run_command_with_timeout("docker", &["info"], std::time::Duration::from_secs(2)) {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
+/// Check if a container registry is reachable by verifying Docker connectivity.
+pub fn check_registry(registry: &str) -> RegistryStatus {
+    if registry.is_empty() {
+        return RegistryStatus::Unknown;
+    }
+
+    let url = build_v2_url(registry);
+
+    if let Some(status) = probe_registry_endpoint(&url) {
+        status
+    } else if check_docker_fallback() {
+        RegistryStatus::Connected
+    } else {
+        RegistryStatus::Disconnected
     }
 }
 
@@ -135,7 +143,7 @@ mod tests {
     #[test]
     fn test_check_registry() {
         crate::utils::test_support::set_mock_path();
-        
+
         let status_empty = check_registry("");
         assert_eq!(status_empty, RegistryStatus::Unknown);
 

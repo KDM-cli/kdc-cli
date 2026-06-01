@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn test_run_stop_restart() {
         crate::utils::test_support::set_mock_path();
-        
+
         let request = RunRequest {
             image: "nginx:latest".to_string(),
             name: Some("my-container".to_string()),

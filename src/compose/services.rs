@@ -62,7 +62,7 @@ mod tests {
     fn test_list_and_running() {
         crate::utils::test_support::set_mock_path();
         let path = std::path::Path::new(".");
-        
+
         let services = list(path).unwrap();
         assert_eq!(services, vec!["service1", "service2"]);
 

@@ -269,9 +269,7 @@ fn registry_connectivity_check(registry_url: &str) -> DoctorCheck {
             name: "Registry Connectivity".to_string(),
             ok: false,
             detail: format!("Failed to inspect {}: {}", image_target, err),
-            suggestion: Some(
-                "Run 'docker login' or check credentials/connectivity".to_string(),
-            ),
+            suggestion: Some("Run 'docker login' or check credentials/connectivity".to_string()),
         },
     }
 }
@@ -420,7 +418,7 @@ mod tests {
     #[test]
     fn test_run_and_run_full() {
         crate::utils::test_support::set_mock_path();
-        
+
         let report = super::run();
         assert!(report.total_count() > 0);
 

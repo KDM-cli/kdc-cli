@@ -6,32 +6,7 @@ use std::sync::OnceLock;
 
 static MOCK_BIN_DIR: OnceLock<PathBuf> = OnceLock::new();
 
-pub fn setup_mock_bin() -> PathBuf {
-    MOCK_BIN_DIR.get_or_init(|| {
-        let temp = std::env::temp_dir().join(format!(
-            "kdc-mock-bin-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&temp).unwrap();
-
-        let kdc_home = temp.join(".kdc");
-        fs::create_dir_all(&kdc_home).unwrap();
-        std::env::set_var("KDC_HOME", &kdc_home);
-
-        write_docker_script(&temp);
-        write_kubectl_script(&temp);
-
-        temp
-    }).clone()
-}
-
-fn write_docker_script(temp: &Path) {
-    let docker_path = temp.join("docker");
-    let mut docker_file = File::create(&docker_path).unwrap();
-    let docker_script = r#"#!/bin/bash
+static DOCKER_SCRIPT: &str = r#"#!/bin/bash
 case "$1" in
   ps)
     if [[ "$*" == *"-a"* ]]; then
@@ -116,16 +91,8 @@ case "$1" in
     ;;
 esac
 "#;
-    docker_file.write_all(docker_script.as_bytes()).unwrap();
-    let mut perms = fs::metadata(&docker_path).unwrap().permissions();
-    perms.set_mode(0o755);
-    fs::set_permissions(&docker_path, perms).unwrap();
-}
 
-fn write_kubectl_script(temp: &Path) {
-    let kubectl_path = temp.join("kubectl");
-    let mut kubectl_file = File::create(&kubectl_path).unwrap();
-    let kubectl_script = r#"#!/bin/bash
+static KUBECTL_SCRIPT: &str = r#"#!/bin/bash
 case "$1" in
   cluster-info)
     echo "Kubernetes control plane is running at https://127.0.0.1:6443"
@@ -169,7 +136,44 @@ case "$1" in
     ;;
 esac
 "#;
-    kubectl_file.write_all(kubectl_script.as_bytes()).unwrap();
+
+pub fn setup_mock_bin() -> PathBuf {
+    MOCK_BIN_DIR
+        .get_or_init(|| {
+            let temp = std::env::temp_dir().join(format!(
+                "kdc-mock-bin-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            fs::create_dir_all(&temp).unwrap();
+
+            let kdc_home = temp.join(".kdc");
+            fs::create_dir_all(&kdc_home).unwrap();
+            std::env::set_var("KDC_HOME", &kdc_home);
+
+            write_docker_script(&temp);
+            write_kubectl_script(&temp);
+
+            temp
+        })
+        .clone()
+}
+
+fn write_docker_script(temp: &Path) {
+    let docker_path = temp.join("docker");
+    let mut docker_file = File::create(&docker_path).unwrap();
+    docker_file.write_all(DOCKER_SCRIPT.as_bytes()).unwrap();
+    let mut perms = fs::metadata(&docker_path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&docker_path, perms).unwrap();
+}
+
+fn write_kubectl_script(temp: &Path) {
+    let kubectl_path = temp.join("kubectl");
+    let mut kubectl_file = File::create(&kubectl_path).unwrap();
+    kubectl_file.write_all(KUBECTL_SCRIPT.as_bytes()).unwrap();
     let mut perms = fs::metadata(&kubectl_path).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&kubectl_path, perms).unwrap();

@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn test_image_ops() {
         crate::utils::test_support::set_mock_path();
-        
+
         let images = list().unwrap();
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].repository, "myapp");

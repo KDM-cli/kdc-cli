@@ -2,9 +2,10 @@ use crate::{
     commands::palette::CommandAction,
     config::settings::Settings,
     domain::{menu::MenuItem, screen::Screen},
-    project::{ProjectCapabilities, ProjectContext, RuntimeCapabilities},
+    project::{runtime, ProjectCapabilities, ProjectContext, RuntimeCapabilities},
     storage::history::ProjectHistory,
     ui::{
+        menus::CapabilityMenuGenerator,
         state::{Notification, UiState},
         theme::ThemeName,
     },
@@ -55,6 +56,17 @@ impl AppState {
     pub fn notify_warning(&mut self, message: impl Into<String>) {
         self.ui
             .push_notification(Notification::warning(message.into()));
+    }
+
+    pub fn refresh_runtime(&mut self) {
+        self.runtime = runtime::detect(&self.capabilities);
+        self.menus = CapabilityMenuGenerator::generate(&self.capabilities, &self.runtime);
+        self.actions = crate::commands::palette::generate_actions(
+            &self.project,
+            &self.capabilities,
+            &self.runtime,
+        );
+        self.status_message = "Runtime refreshed".to_string();
     }
 }
 

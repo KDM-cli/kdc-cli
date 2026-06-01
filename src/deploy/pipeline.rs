@@ -425,6 +425,96 @@ mod tests {
         assert!(rendered.contains("✓ Build Application"));
         assert!(rendered.contains("✗ Docker Build"));
     }
+
+    #[test]
+    fn plan_blocked_without_cluster() {
+        let plan = plan(
+            &ProjectCapabilities {
+                docker: true,
+                kubernetes: true,
+                ..ProjectCapabilities::default()
+            },
+            &RuntimeCapabilities {
+                docker_running: true,
+                cluster_connected: false,
+                ..RuntimeCapabilities::default()
+            },
+        );
+
+        assert!(!plan.ready());
+        assert!(plan
+            .blockers
+            .contains(&"Kubernetes cluster is not connected".to_string()));
+    }
+
+    #[test]
+    fn pipeline_execution_render_shows_success() {
+        use super::{PipelineExecution, PipelineStepResult};
+
+        let execution = PipelineExecution {
+            results: vec![
+                PipelineStepResult {
+                    step: PipelineStep::Build,
+                    success: true,
+                    message: "done".to_string(),
+                    duration_secs: 1.5,
+                },
+                PipelineStepResult {
+                    step: PipelineStep::DockerBuild,
+                    success: true,
+                    message: "built".to_string(),
+                    duration_secs: 5.0,
+                },
+            ],
+            overall_success: true,
+        };
+
+        let rendered = execution.render();
+        assert!(rendered.contains("SUCCESS"));
+        assert!(rendered.contains("✓ Build Application"));
+        assert!(rendered.contains("✓ Docker Build"));
+    }
+
+    #[test]
+    fn pipeline_execution_total_duration() {
+        use super::{PipelineExecution, PipelineStepResult};
+
+        let execution = PipelineExecution {
+            results: vec![
+                PipelineStepResult {
+                    step: PipelineStep::Build,
+                    success: true,
+                    message: "ok".to_string(),
+                    duration_secs: 2.0,
+                },
+                PipelineStepResult {
+                    step: PipelineStep::DockerBuild,
+                    success: true,
+                    message: "ok".to_string(),
+                    duration_secs: 3.5,
+                },
+            ],
+            overall_success: true,
+        };
+
+        assert!((execution.total_duration_secs() - 5.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn deployment_plan_render_includes_steps_and_blockers() {
+        use super::DeploymentPlan;
+
+        let plan = DeploymentPlan {
+            steps: vec![PipelineStep::Build, PipelineStep::DockerBuild],
+            blockers: vec!["Docker daemon is not running".to_string()],
+        };
+
+        let rendered = plan.render();
+        assert!(rendered.contains("Build Application"));
+        assert!(rendered.contains("Docker Build"));
+        assert!(rendered.contains("Docker daemon is not running"));
+        assert!(rendered.contains("Ready: false"));
+    }
 }
 
 #[cfg(test)]

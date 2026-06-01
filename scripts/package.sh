@@ -115,7 +115,7 @@ rpmbuild -bb --target aarch64-linux \
   kdc.spec
 
 # Copy generated RPMs to output directory
-cp "$RPM_BUILD_DIR"/RPMS/**/*.rpm "$OUT_DIR/"
+find "$RPM_BUILD_DIR"/RPMS -name '*.rpm' -exec cp {} "$OUT_DIR/" \;
 rm -rf "$RPM_BUILD_DIR" kdc.spec
 
 echo "Package generation completed successfully."

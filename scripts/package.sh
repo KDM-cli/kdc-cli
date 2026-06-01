@@ -76,6 +76,9 @@ mkdir -p "$RPM_BUILD_DIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 
 # Write spec template
 cat <<'EOF' > kdc.spec
+%global __strip /bin/true
+%global debug_package %{nil}
+
 Name:           kdc
 Version:        %{version}
 Release:        1

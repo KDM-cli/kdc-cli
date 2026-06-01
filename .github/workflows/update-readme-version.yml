@@ -29,12 +29,14 @@ jobs:
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          # Use manual input if triggered via workflow_dispatch, otherwise strip 'v' from the release tag
+          # Use manual input if triggered via workflow_dispatch, otherwise strip 'v' from the release tag.
+          # Always strip a leading 'v' so both "0.1.0" and "v0.1.0" inputs work correctly.
           if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
+            RAW="${{ inputs.version }}"
           else
-            VERSION="${TAG#v}"
+            RAW="${TAG}"
           fi
+          VERSION="${RAW#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
         shell: bash
 

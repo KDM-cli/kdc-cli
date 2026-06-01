@@ -18,13 +18,13 @@ Or install manually from the release tarball:
 
 ```bash
 # Apple Silicon (M1/M2/M3)
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-aarch64-apple-darwin.tar.gz
-tar -xzf kdc-vv0.1.0-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v0.1.0-aarch64-apple-darwin.tar.gz
+tar -xzf kdc-v0.1.0-aarch64-apple-darwin.tar.gz
 sudo mv kdc /usr/local/bin/
 
 # Intel
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-x86_64-apple-darwin.tar.gz
-tar -xzf kdc-vv0.1.0-x86_64-apple-darwin.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v0.1.0-x86_64-apple-darwin.tar.gz
+tar -xzf kdc-v0.1.0-x86_64-apple-darwin.tar.gz
 sudo mv kdc /usr/local/bin/
 ```
 
@@ -58,13 +58,13 @@ sudo rpm -i https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v0.1
 
 ```bash
 # x86_64
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf kdc-vv0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf kdc-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
 sudo mv kdc /usr/local/bin/
 
 # aarch64
-curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-vv0.1.0-aarch64-unknown-linux-gnu.tar.gz
-tar -xzf kdc-vv0.1.0-aarch64-unknown-linux-gnu.tar.gz
+curl -LO https://github.com/KDM-cli/kdc-cli/releases/latest/download/kdc-v0.1.0-aarch64-unknown-linux-gnu.tar.gz
+tar -xzf kdc-v0.1.0-aarch64-unknown-linux-gnu.tar.gz
 sudo mv kdc /usr/local/bin/
 ```
 
@@ -75,7 +75,7 @@ sudo mv kdc /usr/local/bin/
 Download the `.zip` from the [releases page](https://github.com/KDM-cli/kdc-cli/releases/latest):
 
 ```
-kdc-vv0.1.0-x86_64-pc-windows-msvc.zip
+kdc-v0.1.0-x86_64-pc-windows-msvc.zip
 ```
 
 Extract `kdc.exe` and place it somewhere on your `PATH` (e.g. `C:\Users\<you>\bin\`).

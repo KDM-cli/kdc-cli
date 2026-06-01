@@ -150,7 +150,7 @@ jobs:
         shell: bash
 
       - name: Upload archives to release
-        uses: softprops/action-gh-release@c862437e9029c5496c3ae47d90ec96cac9521fd3 # v2.0.8
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
         with:
           files: |
             dist/*
@@ -250,7 +250,7 @@ jobs:
         shell: bash
 
       - name: Update existing release with packages
-        uses: softprops/action-gh-release@c862437e9029c5496c3ae47d90ec96cac9521fd3 # v2.0.8
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
         with:
           files: |
             dist/*.deb

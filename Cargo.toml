@@ -14,7 +14,7 @@ ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
-ureq = "2"
+ureq = "3"
 time = { version = "0.3", features = ["formatting"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"

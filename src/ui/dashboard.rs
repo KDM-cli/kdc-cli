@@ -77,22 +77,14 @@ fn handle_key_event(state: &mut AppState, key: event::KeyEvent) -> io::Result<bo
 
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) => return Ok(true),
-        (KeyCode::Esc, _) if state.ui.has_execution_output() => {
-            state.ui.clear_execution_output()
-        }
+        (KeyCode::Esc, _) if state.ui.has_execution_output() => state.ui.clear_execution_output(),
         (KeyCode::Char('p'), KeyModifiers::CONTROL) => state.ui.palette.open(),
         (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
             refresh_project(state)?;
         }
-        (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
-            route_action(state, "docker.build")
-        }
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-            route_action(state, "kubernetes.deploy")
-        }
-        (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
-            router::route_to(state, Screen::Monitoring)
-        }
+        (KeyCode::Char('b'), KeyModifiers::CONTROL) => route_action(state, "docker.build"),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => route_action(state, "kubernetes.deploy"),
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) => router::route_to(state, Screen::Monitoring),
         (KeyCode::Char('t'), _) => cycle_theme(state),
         (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
             state.ui.toggle_focus();
@@ -155,7 +147,15 @@ fn handle_enter_key(state: &mut AppState) {
                 .ui
                 .screen_actions(&state.actions, state.current_screen)
                 .iter()
-                .map(|a| (a.id.clone(), a.screen, a.label.clone(), a.enabled, a.reason.clone()))
+                .map(|a| {
+                    (
+                        a.id.clone(),
+                        a.screen,
+                        a.label.clone(),
+                        a.enabled,
+                        a.reason.clone(),
+                    )
+                })
                 .collect();
             if let Some((id, screen, label, enabled, reason)) =
                 screen_actions.get(state.ui.selected_action).cloned()
@@ -529,7 +529,11 @@ fn render_deployments(frame: &mut Frame, area: Rect, state: &AppState, palette: 
     let plan = deploy::pipeline::plan(&state.capabilities, &state.runtime);
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(5), Constraint::Min(5), Constraint::Length(8)])
+        .constraints([
+            Constraint::Length(5),
+            Constraint::Min(5),
+            Constraint::Length(8),
+        ])
         .split(area);
     let ready = plan.ready();
 
@@ -640,7 +644,12 @@ fn render_action_list(
     if screen_actions.is_empty() {
         render_empty_actions(frame, area, is_focused, palette);
     } else {
-        let items = build_action_list_items(&screen_actions, is_focused, state.ui.selected_action, palette);
+        let items = build_action_list_items(
+            &screen_actions,
+            is_focused,
+            state.ui.selected_action,
+            palette,
+        );
         render_active_actions(frame, area, items, is_focused, palette);
     }
 }
@@ -652,15 +661,17 @@ fn render_empty_actions(frame: &mut Frame, area: Rect, is_focused: bool, palette
         Style::default().fg(palette.muted)
     };
     frame.render_widget(
-        Paragraph::new("No actions available for this screen.\n\nUse Ctrl+P to open the command palette.")
-            .wrap(Wrap { trim: false })
-            .block(
-                Block::default()
-                    .title(" Actions ")
-                    .borders(Borders::ALL)
-                    .border_style(border_style),
-            )
-            .style(Style::default().fg(palette.muted)),
+        Paragraph::new(
+            "No actions available for this screen.\n\nUse Ctrl+P to open the command palette.",
+        )
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .title(" Actions ")
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        )
+        .style(Style::default().fg(palette.muted)),
         area,
     );
 }
@@ -688,7 +699,11 @@ fn build_action_list_items(
                 Style::default().fg(palette.text)
             };
 
-            let suffix = if !action.enabled { " (unavailable)" } else { "" };
+            let suffix = if !action.enabled {
+                " (unavailable)"
+            } else {
+                ""
+            };
 
             ListItem::new(Line::from(format!("{marker}{}{suffix}", action.label))).style(style)
         })
@@ -723,8 +738,6 @@ fn render_active_actions(
         area,
     );
 }
-
-
 
 fn render_command_palette(
     frame: &mut Frame,
@@ -927,7 +940,6 @@ fn refresh_project(state: &mut AppState) -> io::Result<()> {
     Ok(())
 }
 
-
 fn cycle_theme(state: &mut AppState) {
     state.ui.active_theme = state.ui.active_theme.next();
     let theme_str = state
@@ -979,7 +991,6 @@ fn availability(value: bool) -> &'static str {
         "unavailable"
     }
 }
-
 
 fn render_short_list(values: &[String]) -> String {
     if values.is_empty() {

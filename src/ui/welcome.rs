@@ -62,7 +62,12 @@ fn reload_project(state: &mut AppState, path: PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-pub fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
+pub fn render_first_launch(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    palette: theme::Palette,
+) {
     let welcome_area = welcome_rect(area);
     let outer_block = render_outer_block(frame, welcome_area, palette);
     let inner_area = outer_block.inner(welcome_area);

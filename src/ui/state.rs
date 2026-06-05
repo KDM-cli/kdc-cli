@@ -239,10 +239,7 @@ impl UiState {
         actions: &'a [CommandAction],
         screen: Screen,
     ) -> Vec<&'a CommandAction> {
-        actions
-            .iter()
-            .filter(|a| a.screen == screen)
-            .collect()
+        actions.iter().filter(|a| a.screen == screen).collect()
     }
 }
 

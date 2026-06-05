@@ -131,7 +131,15 @@ pub fn render_scanning(frame: &mut Frame, area: Rect, state: &AppState, palette:
         .split(area);
 
     frame.render_widget(Clear, area);
-    render_panel(frame, layout[0], " Project Scan ", content, palette);
+    render_panel(
+        frame,
+        layout[0],
+        PanelContent {
+            title: " Project Scan ",
+            body: content,
+        },
+        palette,
+    );
     frame.render_widget(
         Gauge::default()
             .block(Block::default().borders(Borders::ALL))
@@ -334,17 +342,16 @@ fn found(value: bool) -> &'static str {
     }
 }
 
-fn render_panel(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    content: String,
-    palette: theme::Palette,
-) {
+struct PanelContent<'a> {
+    title: &'a str,
+    body: String,
+}
+
+fn render_panel(frame: &mut Frame, area: Rect, content: PanelContent<'_>, palette: theme::Palette) {
     frame.render_widget(
-        Paragraph::new(content)
+        Paragraph::new(content.body)
             .wrap(Wrap { trim: false })
-            .block(Block::default().title(title).borders(Borders::ALL))
+            .block(Block::default().title(content.title).borders(Borders::ALL))
             .style(Style::default().fg(palette.text).bg(palette.background)),
         area,
     );

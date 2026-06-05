@@ -104,10 +104,10 @@ fn handle_key_event(state: &mut AppState, key: event::KeyEvent) -> io::Result<bo
             state.ui.focus = FocusPane::Main;
         }
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
-            handle_down_key(state);
+            handle_vertical_key(state, VerticalDirection::Next);
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
-            handle_up_key(state);
+            handle_vertical_key(state, VerticalDirection::Previous);
         }
         (KeyCode::Enter, _) => {
             handle_enter_key(state);
@@ -117,30 +117,28 @@ fn handle_key_event(state: &mut AppState, key: event::KeyEvent) -> io::Result<bo
     Ok(false)
 }
 
-fn handle_down_key(state: &mut AppState) {
-    state.ui.clear_execution_output();
-    match state.ui.focus {
-        FocusPane::Sidebar => navigation::move_next(state),
-        FocusPane::Main => {
-            let total = state
-                .ui
-                .screen_actions(&state.actions, state.current_screen)
-                .len();
-            state.ui.move_action_next(total);
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VerticalDirection {
+    Next,
+    Previous,
 }
 
-fn handle_up_key(state: &mut AppState) {
+fn handle_vertical_key(state: &mut AppState, direction: VerticalDirection) {
     state.ui.clear_execution_output();
     match state.ui.focus {
-        FocusPane::Sidebar => navigation::move_previous(state),
+        FocusPane::Sidebar => match direction {
+            VerticalDirection::Next => navigation::move_next(state),
+            VerticalDirection::Previous => navigation::move_previous(state),
+        },
         FocusPane::Main => {
             let total = state
                 .ui
                 .screen_actions(&state.actions, state.current_screen)
                 .len();
-            state.ui.move_action_previous(total);
+            match direction {
+                VerticalDirection::Next => state.ui.move_action_next(total),
+                VerticalDirection::Previous => state.ui.move_action_previous(total),
+            }
         }
     }
 }
@@ -305,8 +303,10 @@ fn render_main(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::
         render_panel(
             frame,
             area,
-            &format!(" {title} "),
-            format!("{content}\n\nPress Esc or navigate to dismiss."),
+            PanelContent {
+                title: format!(" {title} "),
+                body: format!("{content}\n\nPress Esc or navigate to dismiss."),
+            },
             palette,
         );
         return;
@@ -383,8 +383,10 @@ fn render_dashboard(frame: &mut Frame, area: Rect, state: &AppState, palette: th
     render_panel(
         frame,
         bottom_layout[0],
-        " Project Info ",
-        info_content,
+        PanelContent {
+            title: " Project Info ".to_string(),
+            body: info_content,
+        },
         palette,
     );
 
@@ -394,31 +396,51 @@ fn render_dashboard(frame: &mut Frame, area: Rect, state: &AppState, palette: th
 
 fn render_capability_screen(
     frame: &mut Frame,
-    area: Rect,
     state: &AppState,
     palette: theme::Palette,
-    has_capability: bool,
-    screen: Screen,
-    info_title: &str,
-    info_content: String,
-    panel_title: &str,
-    empty_title: &str,
-    empty_body: &str,
-    empty_suggestion: &str,
-    info_height: u16,
+    spec: CapabilityScreenSpec<'_>,
 ) {
-    if has_capability {
+    if spec.has_capability {
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(info_height), Constraint::Min(5)])
-            .split(area);
+            .constraints([Constraint::Length(spec.info_height), Constraint::Min(5)])
+            .split(spec.area);
 
-        render_panel(frame, layout[0], info_title, info_content, palette);
-        render_action_list(frame, layout[1], state, palette, screen);
+        render_panel(
+            frame,
+            layout[0],
+            PanelContent {
+                title: spec.info_title.to_string(),
+                body: spec.info_content,
+            },
+            palette,
+        );
+        render_action_list(frame, layout[1], state, palette, spec.screen);
     } else {
-        let content = empty_state(empty_title, empty_body, empty_suggestion);
-        render_panel(frame, area, panel_title, content, palette);
+        let content = empty_state(spec.empty_title, spec.empty_body, spec.empty_suggestion);
+        render_panel(
+            frame,
+            spec.area,
+            PanelContent {
+                title: spec.panel_title.to_string(),
+                body: content,
+            },
+            palette,
+        );
     }
+}
+
+struct CapabilityScreenSpec<'a> {
+    area: Rect,
+    has_capability: bool,
+    screen: Screen,
+    info_title: &'a str,
+    info_content: String,
+    panel_title: &'a str,
+    empty_title: &'a str,
+    empty_body: &'a str,
+    empty_suggestion: &'a str,
+    info_height: u16,
 }
 
 fn render_docker(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
@@ -431,39 +453,35 @@ fn render_docker(frame: &mut Frame, area: Rect, state: &AppState, palette: theme
             "Start Docker Desktop or the Docker service to enable runtime actions."
         }
     );
-    render_capability_screen(
-        frame,
+    let spec = CapabilityScreenSpec {
         area,
-        state,
-        palette,
-        state.capabilities.docker,
-        Screen::Docker,
-        " Docker Info ",
-        info,
-        " Docker ",
-        "Docker Not Configured",
-        "No Dockerfile was found.",
-        "Generate or add a Dockerfile to unlock image and container workflows.",
-        8,
-    );
+        has_capability: state.capabilities.docker,
+        screen: Screen::Docker,
+        info_title: " Docker Info ",
+        info_content: info,
+        panel_title: " Docker ",
+        empty_title: "Docker Not Configured",
+        empty_body: "No Dockerfile was found.",
+        empty_suggestion: "Generate or add a Dockerfile to unlock image and container workflows.",
+        info_height: 8,
+    };
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_compose(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    render_capability_screen(
-        frame,
+    let spec = CapabilityScreenSpec {
         area,
-        state,
-        palette,
-        state.capabilities.compose,
-        Screen::Compose,
-        " Compose Info ",
-        "Compose file detected".to_string(),
-        " Compose ",
-        "Compose Not Configured",
-        "No docker-compose.yml or compose.yaml file was found.",
-        "Add a Compose file to unlock multi-service workflows.",
-        5,
-    );
+        has_capability: state.capabilities.compose,
+        screen: Screen::Compose,
+        info_title: " Compose Info ",
+        info_content: "Compose file detected".to_string(),
+        panel_title: " Compose ",
+        empty_title: "Compose Not Configured",
+        empty_body: "No docker-compose.yml or compose.yaml file was found.",
+        empty_suggestion: "Add a Compose file to unlock multi-service workflows.",
+        info_height: 5,
+    };
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_kubernetes(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
@@ -476,39 +494,35 @@ fn render_kubernetes(frame: &mut Frame, area: Rect, state: &AppState, palette: t
             "Connect a cluster or start Minikube to enable deployment actions."
         }
     );
-    render_capability_screen(
-        frame,
+    let spec = CapabilityScreenSpec {
         area,
-        state,
-        palette,
-        state.capabilities.kubernetes,
-        Screen::Kubernetes,
-        " Kubernetes Info ",
-        info,
-        " Kubernetes ",
-        "Kubernetes Not Configured",
-        "No deployment, service, ingress, or kustomization file was found.",
-        "Generate or add manifests to unlock cluster workflows.",
-        10,
-    );
+        has_capability: state.capabilities.kubernetes,
+        screen: Screen::Kubernetes,
+        info_title: " Kubernetes Info ",
+        info_content: info,
+        panel_title: " Kubernetes ",
+        empty_title: "Kubernetes Not Configured",
+        empty_body: "No deployment, service, ingress, or kustomization file was found.",
+        empty_suggestion: "Generate or add manifests to unlock cluster workflows.",
+        info_height: 10,
+    };
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_helm(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    render_capability_screen(
-        frame,
+    let spec = CapabilityScreenSpec {
         area,
-        state,
-        palette,
-        state.capabilities.helm,
-        Screen::Helm,
-        " Helm Info ",
-        "Chart.yaml detected".to_string(),
-        " Helm ",
-        "Helm Not Configured",
-        "No Chart.yaml file was found.",
-        "Add a chart to unlock Helm workflows.",
-        5,
-    );
+        has_capability: state.capabilities.helm,
+        screen: Screen::Helm,
+        info_title: " Helm Info ",
+        info_content: "Chart.yaml detected".to_string(),
+        panel_title: " Helm ",
+        empty_title: "Helm Not Configured",
+        empty_body: "No Chart.yaml file was found.",
+        empty_suggestion: "Add a chart to unlock Helm workflows.",
+        info_height: 5,
+    };
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_deployments(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
@@ -538,8 +552,10 @@ fn render_deployments(frame: &mut Frame, area: Rect, state: &AppState, palette: 
     render_panel(
         frame,
         layout[1],
-        " Deployment Plan ",
-        plan.render(),
+        PanelContent {
+            title: " Deployment Plan ".to_string(),
+            body: plan.render(),
+        },
         palette,
     );
     render_action_list(frame, layout[2], state, palette, Screen::Deployments);
@@ -551,21 +567,19 @@ fn render_monitoring(frame: &mut Frame, area: Rect, state: &AppState, palette: t
         availability(state.runtime.docker_running),
         availability(state.runtime.cluster_connected)
     );
-    render_capability_screen(
-        frame,
+    let spec = CapabilityScreenSpec {
         area,
-        state,
-        palette,
-        state.capabilities.monitoring,
-        Screen::Monitoring,
-        " Monitoring Info ",
-        info,
-        " Monitoring ",
-        "Monitoring Not Available",
-        "No Docker, Compose, or Kubernetes assets were found.",
-        "Add runtime configuration to unlock logs, health, metrics, and events.",
-        10,
-    );
+        has_capability: state.capabilities.monitoring,
+        screen: Screen::Monitoring,
+        info_title: " Monitoring Info ",
+        info_content: info,
+        panel_title: " Monitoring ",
+        empty_title: "Monitoring Not Available",
+        empty_body: "No Docker, Compose, or Kubernetes assets were found.",
+        empty_suggestion: "Add runtime configuration to unlock logs, health, metrics, and events.",
+        info_height: 10,
+    };
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_settings(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
@@ -586,21 +600,28 @@ fn render_settings(frame: &mut Frame, area: Rect, state: &AppState, palette: the
             .collect::<Vec<_>>()
             .join("\n")
     );
-    render_panel(frame, settings_layout[0], " Settings ", content, palette);
+    render_panel(
+        frame,
+        settings_layout[0],
+        PanelContent {
+            title: " Settings ".to_string(),
+            body: content,
+        },
+        palette,
+    );
     render_action_list(frame, settings_layout[1], state, palette, Screen::Settings);
 }
 
-fn render_panel(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    content: String,
-    palette: theme::Palette,
-) {
+struct PanelContent {
+    title: String,
+    body: String,
+}
+
+fn render_panel(frame: &mut Frame, area: Rect, content: PanelContent, palette: theme::Palette) {
     frame.render_widget(
-        Paragraph::new(content)
+        Paragraph::new(content.body)
             .wrap(Wrap { trim: false })
-            .block(Block::default().title(title).borders(Borders::ALL))
+            .block(Block::default().title(content.title).borders(Borders::ALL))
             .style(Style::default().fg(palette.text).bg(palette.background)),
         area,
     );

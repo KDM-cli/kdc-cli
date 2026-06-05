@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf, time::Duration};
+use std::{io, time::Duration};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -20,10 +20,11 @@ use crate::{
     project::analyzer,
     services::executor::{CommandExecutor, KdcExecutor},
     ui::{
-        command_palette, folder_picker,
-        state::{FirstLaunchChoice, Notification, NotificationLevel, UiPhase},
+        command_palette,
+        state::{FocusPane, Notification, NotificationLevel, UiPhase},
         statusbar,
         theme::{self, ThemeName},
+        welcome,
     },
 };
 
@@ -55,88 +56,119 @@ fn run_loop(terminal: &mut DefaultTerminal, state: &mut AppState) -> io::Result<
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-
-                if state.ui.palette.open {
-                    handle_palette_key(state, key.code);
-                    continue;
-                }
-
-                if state.ui.phase == UiPhase::FirstLaunch {
-                    if handle_first_launch_key(state, key.code)? {
-                        break;
-                    }
-                    continue;
-                }
-
-                match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _) => break,
-                    (KeyCode::Esc, _) if state.ui.has_execution_output() => {
-                        state.ui.clear_execution_output()
-                    }
-                    (KeyCode::Char('p'), KeyModifiers::CONTROL) => state.ui.palette.open(),
-                    (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
-                        refresh_project(state)?;
-                    }
-                    (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
-                        route_action(state, "docker.build")
-                    }
-                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-                        route_action(state, "kubernetes.deploy")
-                    }
-                    (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
-                        router::route_to(state, Screen::Monitoring)
-                    }
-                    (KeyCode::Char('t'), _) => cycle_theme(state),
-                    (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
-                        state.ui.clear_execution_output();
-                        navigation::move_next(state);
-                    }
-                    (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
-                        state.ui.clear_execution_output();
-                        navigation::move_previous(state);
-                    }
-                    (KeyCode::Enter, _) => {
-                        state.ui.clear_execution_output();
-                        router::select_current_menu(state);
-                    }
-                    _ => {}
+                if handle_key_event(state, key)? {
+                    break;
                 }
             }
         }
     }
-
     Ok(())
 }
 
-fn handle_first_launch_key(state: &mut AppState, code: KeyCode) -> io::Result<bool> {
-    match code {
-        KeyCode::Char('q') | KeyCode::Esc => Ok(true),
-        KeyCode::Down | KeyCode::Char('j') => {
-            state.ui.move_first_launch_next();
-            Ok(false)
+fn handle_key_event(state: &mut AppState, key: event::KeyEvent) -> io::Result<bool> {
+    if state.ui.palette.open {
+        handle_palette_key(state, key.code);
+        return Ok(false);
+    }
+
+    if state.ui.phase == UiPhase::FirstLaunch {
+        return welcome::handle_first_launch_key(state, key.code);
+    }
+
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('q'), _) => return Ok(true),
+        (KeyCode::Esc, _) if state.ui.has_execution_output() => state.ui.clear_execution_output(),
+        (KeyCode::Char('p'), KeyModifiers::CONTROL) => state.ui.palette.open(),
+        (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+            refresh_project(state)?;
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            state.ui.move_first_launch_previous();
-            Ok(false)
+        (KeyCode::Char('b'), KeyModifiers::CONTROL) => route_action(state, "docker.build"),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => route_action(state, "kubernetes.deploy"),
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) => router::route_to(state, Screen::Monitoring),
+        (KeyCode::Char('t'), _) => cycle_theme(state),
+        (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
+            state.ui.toggle_focus();
         }
-        KeyCode::Enter => {
-            match state.ui.selected_first_launch_choice() {
-                FirstLaunchChoice::UseCurrentFolder => {
-                    state.ui.start_scanning();
-                    state.notify_info("Scanning current folder");
-                }
-                FirstLaunchChoice::BrowseFolder => {
-                    if let Some(path) = folder_picker::pick_folder()? {
-                        reload_project(state, path)?;
-                    } else {
-                        state.notify_warning("Folder selection cancelled");
-                    }
-                }
-                FirstLaunchChoice::Exit => return Ok(true),
+        (KeyCode::Left, _) => {
+            state.ui.focus = FocusPane::Sidebar;
+        }
+        (KeyCode::Right, _) => {
+            state.ui.focus = FocusPane::Main;
+        }
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => {
+            handle_vertical_key(state, VerticalDirection::Next);
+        }
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => {
+            handle_vertical_key(state, VerticalDirection::Previous);
+        }
+        (KeyCode::Enter, _) => {
+            handle_enter_key(state);
+        }
+        _ => {}
+    }
+    Ok(false)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VerticalDirection {
+    Next,
+    Previous,
+}
+
+fn handle_vertical_key(state: &mut AppState, direction: VerticalDirection) {
+    state.ui.clear_execution_output();
+    match state.ui.focus {
+        FocusPane::Sidebar => match direction {
+            VerticalDirection::Next => navigation::move_next(state),
+            VerticalDirection::Previous => navigation::move_previous(state),
+        },
+        FocusPane::Main => {
+            let total = state
+                .ui
+                .screen_actions(&state.actions, state.current_screen)
+                .len();
+            match direction {
+                VerticalDirection::Next => state.ui.move_action_next(total),
+                VerticalDirection::Previous => state.ui.move_action_previous(total),
             }
-            Ok(false)
         }
-        _ => Ok(false),
+    }
+}
+
+fn handle_enter_key(state: &mut AppState) {
+    state.ui.clear_execution_output();
+    match state.ui.focus {
+        FocusPane::Sidebar => {
+            state.ui.reset_action_selection();
+            router::select_current_menu(state);
+        }
+        FocusPane::Main => {
+            let screen_actions: Vec<_> = state
+                .ui
+                .screen_actions(&state.actions, state.current_screen)
+                .iter()
+                .map(|a| {
+                    (
+                        a.id.clone(),
+                        a.screen,
+                        a.label.clone(),
+                        a.enabled,
+                        a.reason.clone(),
+                    )
+                })
+                .collect();
+            if let Some((id, screen, label, enabled, reason)) =
+                screen_actions.get(state.ui.selected_action).cloned()
+            {
+                if enabled {
+                    execute_action(state, &id, screen, &label);
+                } else {
+                    state.ui.push_notification(Notification::warning(
+                        reason.unwrap_or_else(|| "Action unavailable".to_string()),
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -145,12 +177,12 @@ fn render(frame: &mut Frame, state: &AppState) {
 
     match state.ui.phase {
         UiPhase::FirstLaunch => {
-            render_first_launch(frame, frame.area(), state, palette);
+            welcome::render_first_launch(frame, frame.area(), state, palette);
             render_notifications(frame, state, palette);
             return;
         }
         UiPhase::Scanning => {
-            render_scanning(frame, frame.area(), state, palette);
+            welcome::render_scanning(frame, frame.area(), state, palette);
             render_notifications(frame, state, palette);
             return;
         }
@@ -212,6 +244,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState, palette: theme
 }
 
 fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
+    let is_focused = state.ui.focus == FocusPane::Sidebar;
     let items = state
         .menus
         .iter()
@@ -236,8 +269,24 @@ fn render_sidebar(frame: &mut Frame, area: Rect, state: &AppState, palette: them
         })
         .collect::<Vec<_>>();
 
+    let border_style = if is_focused {
+        Style::default().fg(palette.accent)
+    } else {
+        Style::default().fg(palette.muted)
+    };
+    let title = if is_focused {
+        " Navigation ● "
+    } else {
+        " Navigation "
+    };
+
     frame.render_widget(
-        List::new(items).block(Block::default().title(" Navigation ").borders(Borders::ALL)),
+        List::new(items).block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        ),
         area,
     );
 }
@@ -254,8 +303,10 @@ fn render_main(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::
         render_panel(
             frame,
             area,
-            &format!(" {title} "),
-            format!("{content}\n\nPress Esc or navigate to dismiss."),
+            PanelContent {
+                title: format!(" {title} "),
+                body: format!("{content}\n\nPress Esc or navigate to dismiss."),
+            },
             palette,
         );
         return;
@@ -306,116 +357,183 @@ fn render_dashboard(frame: &mut Frame, area: Rect, state: &AppState, palette: th
         );
     }
 
-    let actions = state
-        .actions
-        .iter()
-        .take(10)
-        .map(|action| {
-            let marker = if action.enabled { "-" } else { "x" };
-            format!("{marker} {}", action.label)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
     let analysis = analyzer::ProjectAnalysis::from_context(
         &state.project,
         state.capabilities.clone(),
         state.runtime.clone(),
     );
-    let content = format!(
-        "Project: {}\nStack: {}\nRoot: {}\n\nRuntime\nDocker: {}\nCluster: {}\n\nAvailable Actions:\n{}\n\nNext Steps:\n{}\n\nCtrl+P opens command palette. Press t to cycle themes.",
+
+    // Split the bottom area into info panel and action list
+    let bottom_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(dashboard_layout[1]);
+
+    // Left: project info
+    let info_content = format!(
+        "Project: {}\nStack: {}\nRoot: {}\n\nRuntime\nDocker: {}\nCluster: {}\n\nNext Steps:\n{}\n\nCtrl+P opens command palette.\nPress t to cycle themes.\nTab/←/→ to switch panes.",
         state.project.name,
         state.project.stack,
         state.project.root.display(),
         availability(state.runtime.docker_running),
         availability(state.runtime.cluster_connected),
-        if actions.is_empty() { "none".to_string() } else { actions },
         render_short_list(&analysis.next_steps)
     );
 
     render_panel(
         frame,
-        dashboard_layout[1],
-        " Project Dashboard ",
-        content,
+        bottom_layout[0],
+        PanelContent {
+            title: " Project Info ".to_string(),
+            body: info_content,
+        },
         palette,
     );
+
+    // Right: selectable action list
+    render_action_list(frame, bottom_layout[1], state, palette, Screen::Dashboard);
+}
+
+fn render_capability_screen(
+    frame: &mut Frame,
+    state: &AppState,
+    palette: theme::Palette,
+    spec: CapabilityScreenSpec<'_>,
+) {
+    if spec.has_capability {
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(spec.info_height), Constraint::Min(5)])
+            .split(spec.area);
+
+        render_panel(
+            frame,
+            layout[0],
+            PanelContent {
+                title: spec.info_title.to_string(),
+                body: spec.info_content,
+            },
+            palette,
+        );
+        render_action_list(frame, layout[1], state, palette, spec.screen);
+    } else {
+        let content = empty_state(spec.empty_title, spec.empty_body, spec.empty_suggestion);
+        render_panel(
+            frame,
+            spec.area,
+            PanelContent {
+                title: spec.panel_title.to_string(),
+                body: content,
+            },
+            palette,
+        );
+    }
+}
+
+struct CapabilityScreenSpec<'a> {
+    area: Rect,
+    has_capability: bool,
+    screen: Screen,
+    info_title: &'a str,
+    info_content: String,
+    panel_title: &'a str,
+    empty_title: &'a str,
+    empty_body: &'a str,
+    empty_suggestion: &'a str,
+    info_height: u16,
 }
 
 fn render_docker(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let content = if state.capabilities.docker {
-        format!(
-            "Dockerfile detected\nDaemon: {}\n\nActions\n- Build Docker Image\n- Run Container\n- Docker Logs\n\n{}",
-            availability(state.runtime.docker_running),
-            if state.runtime.docker_running {
-                "Runtime actions are ready for the Docker engine implementation."
-            } else {
-                "Start Docker Desktop or the Docker service to enable runtime actions."
-            }
-        )
-    } else {
-        empty_state(
-            "Docker Not Configured",
-            "No Dockerfile was found.",
-            "Generate or add a Dockerfile to unlock image and container workflows.",
-        )
+    let info = format!(
+        "Dockerfile detected\nDaemon: {}\n\n{}",
+        availability(state.runtime.docker_running),
+        if state.runtime.docker_running {
+            "Runtime actions are ready for the Docker engine implementation."
+        } else {
+            "Start Docker Desktop or the Docker service to enable runtime actions."
+        }
+    );
+    let spec = CapabilityScreenSpec {
+        area,
+        has_capability: state.capabilities.docker,
+        screen: Screen::Docker,
+        info_title: " Docker Info ",
+        info_content: info,
+        panel_title: " Docker ",
+        empty_title: "Docker Not Configured",
+        empty_body: "No Dockerfile was found.",
+        empty_suggestion: "Generate or add a Dockerfile to unlock image and container workflows.",
+        info_height: 8,
     };
-    render_panel(frame, area, " Docker ", content, palette);
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_compose(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let content = if state.capabilities.compose {
-        "Compose file detected\n\nActions\n- Compose Up\n- Compose Down\n- Compose Logs\n- Restart Services"
-            .to_string()
-    } else {
-        empty_state(
-            "Compose Not Configured",
-            "No docker-compose.yml or compose.yaml file was found.",
-            "Add a Compose file to unlock multi-service workflows.",
-        )
+    let spec = CapabilityScreenSpec {
+        area,
+        has_capability: state.capabilities.compose,
+        screen: Screen::Compose,
+        info_title: " Compose Info ",
+        info_content: "Compose file detected".to_string(),
+        panel_title: " Compose ",
+        empty_title: "Compose Not Configured",
+        empty_body: "No docker-compose.yml or compose.yaml file was found.",
+        empty_suggestion: "Add a Compose file to unlock multi-service workflows.",
+        info_height: 5,
     };
-    render_panel(frame, area, " Compose ", content, palette);
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_kubernetes(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let content = if state.capabilities.kubernetes {
-        format!(
-            "Kubernetes manifests detected\nCluster: {}\n\nResources\n- Deployments\n- Pods\n- Services\n- Ingress\n- ConfigMaps\n- Secrets\n\n{}",
-            availability(state.runtime.cluster_connected),
-            if state.runtime.cluster_connected {
-                "Read-only resource views are ready for kube-rs integration."
-            } else {
-                "Connect a cluster or start Minikube to enable deployment actions."
-            }
-        )
-    } else {
-        empty_state(
-            "Kubernetes Not Configured",
-            "No deployment, service, ingress, or kustomization file was found.",
-            "Generate or add manifests to unlock cluster workflows.",
-        )
+    let info = format!(
+        "Kubernetes manifests detected\nCluster: {}\n\nResources\n- Deployments\n- Pods\n- Services\n\n{}",
+        availability(state.runtime.cluster_connected),
+        if state.runtime.cluster_connected {
+            "Read-only resource views are ready for kube-rs integration."
+        } else {
+            "Connect a cluster or start Minikube to enable deployment actions."
+        }
+    );
+    let spec = CapabilityScreenSpec {
+        area,
+        has_capability: state.capabilities.kubernetes,
+        screen: Screen::Kubernetes,
+        info_title: " Kubernetes Info ",
+        info_content: info,
+        panel_title: " Kubernetes ",
+        empty_title: "Kubernetes Not Configured",
+        empty_body: "No deployment, service, ingress, or kustomization file was found.",
+        empty_suggestion: "Generate or add manifests to unlock cluster workflows.",
+        info_height: 10,
     };
-    render_panel(frame, area, " Kubernetes ", content, palette);
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_helm(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let content = if state.capabilities.helm {
-        "Chart.yaml detected\n\nActions\n- Helm Install\n- Helm Upgrade\n- Helm Rollback"
-            .to_string()
-    } else {
-        empty_state(
-            "Helm Not Configured",
-            "No Chart.yaml file was found.",
-            "Add a chart to unlock Helm workflows.",
-        )
+    let spec = CapabilityScreenSpec {
+        area,
+        has_capability: state.capabilities.helm,
+        screen: Screen::Helm,
+        info_title: " Helm Info ",
+        info_content: "Chart.yaml detected".to_string(),
+        panel_title: " Helm ",
+        empty_title: "Helm Not Configured",
+        empty_body: "No Chart.yaml file was found.",
+        empty_suggestion: "Add a chart to unlock Helm workflows.",
+        info_height: 5,
     };
-    render_panel(frame, area, " Helm ", content, palette);
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_deployments(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
     let plan = deploy::pipeline::plan(&state.capabilities, &state.runtime);
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(5), Constraint::Min(8)])
+        .constraints([
+            Constraint::Length(5),
+            Constraint::Min(5),
+            Constraint::Length(8),
+        ])
         .split(area);
     let ready = plan.ready();
 
@@ -438,30 +556,42 @@ fn render_deployments(frame: &mut Frame, area: Rect, state: &AppState, palette: 
     render_panel(
         frame,
         layout[1],
-        " Deployment Plan ",
-        plan.render(),
+        PanelContent {
+            title: " Deployment Plan ".to_string(),
+            body: plan.render(),
+        },
         palette,
     );
+    render_action_list(frame, layout[2], state, palette, Screen::Deployments);
 }
 
 fn render_monitoring(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let content = if state.capabilities.monitoring {
-        format!(
-            "Health\nDocker: {}\nCluster: {}\n\nLogs\n- Application Logs\n- Docker Logs\n- Pod Logs\n\nMetrics\n- CPU Usage\n- Memory Usage\n- Network Usage\n\nEvents\nNo events collected yet.",
-            availability(state.runtime.docker_running),
-            availability(state.runtime.cluster_connected)
-        )
-    } else {
-        empty_state(
-            "Monitoring Not Available",
-            "No Docker, Compose, or Kubernetes assets were found.",
-            "Add runtime configuration to unlock logs, health, metrics, and events.",
-        )
+    let info = format!(
+        "Health\nDocker: {}\nCluster: {}\n\nMetrics\n- CPU Usage\n- Memory Usage\n- Network Usage\n\nEvents\nNo events collected yet.",
+        availability(state.runtime.docker_running),
+        availability(state.runtime.cluster_connected)
+    );
+    let spec = CapabilityScreenSpec {
+        area,
+        has_capability: state.capabilities.monitoring,
+        screen: Screen::Monitoring,
+        info_title: " Monitoring Info ",
+        info_content: info,
+        panel_title: " Monitoring ",
+        empty_title: "Monitoring Not Available",
+        empty_body: "No Docker, Compose, or Kubernetes assets were found.",
+        empty_suggestion: "Add runtime configuration to unlock logs, health, metrics, and events.",
+        info_height: 10,
     };
-    render_panel(frame, area, " Monitoring ", content, palette);
+    render_capability_screen(frame, state, palette, spec);
 }
 
 fn render_settings(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
+    let settings_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(12), Constraint::Min(5)])
+        .split(area);
+
     let content = format!(
         "Project: {}\nTheme: {}\nDefault Environment: {}\nRecent Projects: {}\n\nTheme Options\n{}\n\nPress t to cycle theme.",
         state.project.name,
@@ -474,266 +604,138 @@ fn render_settings(frame: &mut Frame, area: Rect, state: &AppState, palette: the
             .collect::<Vec<_>>()
             .join("\n")
     );
-    render_panel(frame, area, " Settings ", content, palette);
+    render_panel(
+        frame,
+        settings_layout[0],
+        PanelContent {
+            title: " Settings ".to_string(),
+            body: content,
+        },
+        palette,
+    );
+    render_action_list(frame, settings_layout[1], state, palette, Screen::Settings);
 }
 
-fn render_panel(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    content: String,
-    palette: theme::Palette,
-) {
+struct PanelContent {
+    title: String,
+    body: String,
+}
+
+fn render_panel(frame: &mut Frame, area: Rect, content: PanelContent, palette: theme::Palette) {
     frame.render_widget(
-        Paragraph::new(content)
+        Paragraph::new(content.body)
             .wrap(Wrap { trim: false })
-            .block(Block::default().title(title).borders(Borders::ALL))
+            .block(Block::default().title(content.title).borders(Borders::ALL))
             .style(Style::default().fg(palette.text).bg(palette.background)),
         area,
     );
 }
 
-fn welcome_rect(area: Rect) -> Rect {
-    let width_u32 = (area.width as u32 * 65 / 100)
-        .max(60)
-        .min(area.width as u32);
-    let height_u32 = 25u32.min(area.height as u32).max(20);
+fn render_action_list(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    palette: theme::Palette,
+    screen: Screen,
+) {
+    let is_focused = state.ui.focus == FocusPane::Main;
+    let screen_actions = state.ui.screen_actions(&state.actions, screen);
 
-    let width = width_u32 as u16;
-    let height = height_u32 as u16;
-    let x = area.width.saturating_sub(width) / 2;
-    let y = area.height.saturating_sub(height) / 2;
-    Rect {
-        x,
-        y,
-        width,
-        height,
+    if screen_actions.is_empty() {
+        render_empty_actions(frame, area, is_focused, palette);
+    } else {
+        let items = build_action_list_items(
+            &screen_actions,
+            is_focused,
+            state.ui.selected_action,
+            palette,
+        );
+        render_active_actions(frame, area, items, is_focused, palette);
     }
 }
 
-fn render_outer_block(
-    frame: &mut Frame,
-    welcome_area: Rect,
+fn render_empty_actions(frame: &mut Frame, area: Rect, is_focused: bool, palette: theme::Palette) {
+    let border_style = if is_focused {
+        Style::default().fg(palette.accent)
+    } else {
+        Style::default().fg(palette.muted)
+    };
+    frame.render_widget(
+        Paragraph::new(
+            "No actions available for this screen.\n\nUse Ctrl+P to open the command palette.",
+        )
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .title(" Actions ")
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        )
+        .style(Style::default().fg(palette.muted)),
+        area,
+    );
+}
+
+fn build_action_list_items(
+    actions: &[&crate::commands::palette::CommandAction],
+    is_focused: bool,
+    selected_idx: usize,
     palette: theme::Palette,
-) -> Block<'static> {
-    let outer_block = Block::default().borders(Borders::ALL).title(Span::styled(
-        " KDC - Welcome ",
-        Style::default()
-            .fg(palette.accent)
-            .add_modifier(Modifier::BOLD),
-    ));
-    frame.render_widget(Clear, welcome_area);
-    frame.render_widget(outer_block.clone(), welcome_area);
-    outer_block
-}
-
-fn render_ascii_banner(frame: &mut Frame, chunk: Rect, palette: theme::Palette) {
-    let ascii_art = vec![
-        Line::from(Span::styled(
-            "  _  ______   ____ ",
-            Style::default()
-                .fg(palette.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(
-            " | |/ /  _ \\ / ___|",
-            Style::default()
-                .fg(palette.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(
-            " | ' /| | | | |    ",
-            Style::default()
-                .fg(palette.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(
-            " | . \\| |_| | |___ ",
-            Style::default()
-                .fg(palette.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(
-            " |_|\\_\\____/ \\____|",
-            Style::default()
-                .fg(palette.accent)
-                .add_modifier(Modifier::BOLD),
-        )),
-    ];
-    frame.render_widget(
-        Paragraph::new(ascii_art).alignment(Alignment::Center),
-        chunk,
-    );
-}
-
-fn render_subtitle(frame: &mut Frame, chunk: Rect, palette: theme::Palette) {
-    let subtitle_info = vec![
-        Line::from(Span::styled(
-            "Kubernetes & Docker Commander like a boss.",
-            Style::default().fg(palette.text),
-        )),
-        Line::from(Span::styled(
-            "https://github.com/KDM-cli/kdc-cli",
-            Style::default().fg(palette.muted),
-        )),
-        Line::from(vec![
-            Span::raw("[with "),
-            Span::styled("♥", Style::default().fg(palette.danger)),
-            Span::raw(" by "),
-            Span::styled("@utkarsh232005", Style::default().fg(palette.success)),
-            Span::raw("]"),
-        ]),
-    ];
-    frame.render_widget(
-        Paragraph::new(subtitle_info).alignment(Alignment::Center),
-        chunk,
-    );
-}
-
-fn capability_line(label: &str, present: bool, palette: theme::Palette) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(format!("  {}: ", label), Style::default().fg(palette.muted)),
-        Span::styled(
-            if present { "Found" } else { "Missing" },
-            Style::default().fg(if present {
-                palette.success
-            } else {
-                palette.warning
-            }),
-        ),
-    ])
-}
-
-fn render_capabilities_card(
-    frame: &mut Frame,
-    chunk: Rect,
-    state: &AppState,
-    palette: theme::Palette,
-) {
-    let mut details = Vec::new();
-    details.push(Line::from(vec![
-        Span::styled("  Root: ", Style::default().fg(palette.muted)),
-        Span::styled(
-            format!("{}", state.project.root.display()),
-            Style::default().fg(palette.text),
-        ),
-    ]));
-    details.push(Line::from(vec![
-        Span::styled("  Stack: ", Style::default().fg(palette.muted)),
-        Span::styled(
-            format!("{}", state.project.stack),
-            Style::default().fg(palette.text),
-        ),
-    ]));
-    details.push(capability_line(
-        "Dockerfile",
-        state.capabilities.docker,
-        palette,
-    ));
-    details.push(capability_line(
-        "Compose",
-        state.capabilities.compose,
-        palette,
-    ));
-    details.push(capability_line(
-        "Kubernetes",
-        state.capabilities.kubernetes,
-        palette,
-    ));
-    details.push(capability_line(
-        "Helm Chart",
-        state.capabilities.helm,
-        palette,
-    ));
-
-    frame.render_widget(
-        Paragraph::new(details)
-            .block(
-                Block::default()
-                    .title(" Current Directory Details ")
-                    .borders(Borders::ALL),
-            )
-            .style(Style::default().fg(palette.text)),
-        chunk,
-    );
-}
-
-fn render_first_launch(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let welcome_area = welcome_rect(area);
-    let outer_block = render_outer_block(frame, welcome_area, palette);
-    let inner_area = outer_block.inner(welcome_area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5), // ASCII art
-            Constraint::Length(4), // Subtitle, link, author
-            Constraint::Length(8), // Project card
-            Constraint::Min(5),    // Options
-        ])
-        .split(inner_area);
-
-    render_ascii_banner(frame, chunks[0], palette);
-    render_subtitle(frame, chunks[1], palette);
-    render_capabilities_card(frame, chunks[2], state, palette);
-
-    // 4. Action/Choice List
-    let choices = [
-        FirstLaunchChoice::UseCurrentFolder,
-        FirstLaunchChoice::BrowseFolder,
-        FirstLaunchChoice::Exit,
-    ];
-    let items = choices
+) -> Vec<ListItem<'static>> {
+    actions
         .iter()
         .enumerate()
-        .map(|(index, choice)| {
-            let marker = if state.ui.first_launch_choice == index {
-                "> "
-            } else {
-                "  "
-            };
-            let style = if state.ui.first_launch_choice == index {
+        .map(|(index, action)| {
+            let is_selected = is_focused && index == selected_idx;
+            let marker = if is_selected { "▸ " } else { "  " };
+
+            let style = if !action.enabled {
+                Style::default().fg(palette.muted)
+            } else if is_selected {
                 Style::default()
                     .fg(palette.accent)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(palette.text)
             };
-            ListItem::new(format!("{marker}{}", choice.label())).style(style)
-        })
-        .collect::<Vec<_>>();
 
-    frame.render_widget(
-        List::new(items).block(Block::default().title(" Actions ").borders(Borders::ALL)),
-        chunks[3],
-    );
+            let suffix = if !action.enabled {
+                " (unavailable)"
+            } else {
+                ""
+            };
+
+            ListItem::new(Line::from(format!("{marker}{}{suffix}", action.label))).style(style)
+        })
+        .collect()
 }
 
-fn render_scanning(frame: &mut Frame, area: Rect, state: &AppState, palette: theme::Palette) {
-    let area = centered_rect(62, 36, area);
-    let content = format!(
-        "Scanning Project...\n\nProject: {}\nRoot: {}\n\nDockerfile: {}\nCompose: {}\nKubernetes: {}\nHelm: {}\nStack: {}",
-        state.project.name,
-        state.project.root.display(),
-        found(state.capabilities.docker),
-        found(state.capabilities.compose),
-        found(state.capabilities.kubernetes),
-        found(state.capabilities.helm),
-        state.project.stack
-    );
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(3)])
-        .split(area);
+fn render_active_actions(
+    frame: &mut Frame,
+    area: Rect,
+    items: Vec<ListItem<'static>>,
+    is_focused: bool,
+    palette: theme::Palette,
+) {
+    let border_style = if is_focused {
+        Style::default().fg(palette.accent)
+    } else {
+        Style::default().fg(palette.muted)
+    };
+    let title = if is_focused {
+        " Actions ● (Enter to run) "
+    } else {
+        " Actions (Tab to focus) "
+    };
 
-    frame.render_widget(Clear, area);
-    render_panel(frame, layout[0], " Project Scan ", content, palette);
     frame.render_widget(
-        Gauge::default()
-            .block(Block::default().borders(Borders::ALL))
-            .gauge_style(Style::default().fg(palette.accent))
-            .percent(state.ui.scan_progress),
-        layout[1],
+        List::new(items).block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(border_style),
+        ),
+        area,
     );
 }
 
@@ -938,18 +940,6 @@ fn refresh_project(state: &mut AppState) -> io::Result<()> {
     Ok(())
 }
 
-fn reload_project(state: &mut AppState, path: PathBuf) -> io::Result<()> {
-    let mut new_state = startup::initialize(path.clone()).map_err(io::Error::other)?;
-    new_state.ui.active_theme = state.ui.active_theme;
-    new_state.ui.picked_folder = Some(path.clone());
-    new_state.ui.start_scanning();
-    new_state
-        .ui
-        .push_notification(Notification::info(format!("Selected {}", path.display())));
-    *state = new_state;
-    Ok(())
-}
-
 fn cycle_theme(state: &mut AppState) {
     state.ui.active_theme = state.ui.active_theme.next();
     let theme_str = state
@@ -999,14 +989,6 @@ fn availability(value: bool) -> &'static str {
         "available"
     } else {
         "unavailable"
-    }
-}
-
-fn found(value: bool) -> &'static str {
-    if value {
-        "found"
-    } else {
-        "missing"
     }
 }
 
@@ -1072,15 +1054,15 @@ mod tests {
         crate::utils::test_support::set_mock_path();
         let mut state = crate::app::startup::initialize(std::path::PathBuf::from(".")).unwrap();
         state.ui.first_launch_choice = 0;
-        let res = handle_first_launch_key(&mut state, KeyCode::Down);
+        let res = welcome::handle_first_launch_key(&mut state, KeyCode::Down);
         assert!(res.is_ok());
         assert_eq!(state.ui.first_launch_choice, 1);
 
-        let res = handle_first_launch_key(&mut state, KeyCode::Up);
+        let res = welcome::handle_first_launch_key(&mut state, KeyCode::Up);
         assert!(res.is_ok());
         assert_eq!(state.ui.first_launch_choice, 0);
 
-        let res = handle_first_launch_key(&mut state, KeyCode::Enter);
+        let res = welcome::handle_first_launch_key(&mut state, KeyCode::Enter);
         assert!(res.is_ok());
     }
 
